@@ -32,6 +32,9 @@ export default function LoginPage() {
         if (error) throw error;
         router.push("/dashboard");
         router.refresh();
+        // Keep the button in its loading state until the redirect lands —
+        // resetting here makes the UI look idle while the dashboard loads.
+        return;
       } else {
         const { error } = await supabase.auth.signUp({
           email,

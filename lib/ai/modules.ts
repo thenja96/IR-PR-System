@@ -1,4 +1,4 @@
-// Form configuration for each AI module. Field names MUST match the
+﻿// Form configuration for each AI module. Field names MUST match the
 // {{placeholders}} in lib/prompts/templates.ts.
 // Plain data — safe to import from client components.
 
@@ -8,6 +8,7 @@ import { CLIENT_REPORT_TYPES, PRIVATE_REPORT_TYPES } from "@/types/reports";
 export const MODULES: Record<string, ModuleConfig> = {
   company_snapshot: {
     analysisType: "company_snapshot",
+    sourceContextField: "source_text",
     title: "Company Snapshot",
     description:
       "Generate an institutional-quality snapshot from source documents.",
@@ -22,6 +23,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   bursa_announcement: {
     analysisType: "bursa_announcement",
+    sourceContextField: "announcement_text",
     title: "Bursa Announcement Radar",
     description:
       "Paste a Bursa announcement to classify it, assess impact, and get a suggested IR/PR response.",
@@ -35,6 +37,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   competitor_intelligence: {
     analysisType: "competitor_intelligence",
+    sourceContextField: "client_context",
     title: "Competitor Intelligence",
     description:
       "Compare peer activity against your client and identify gaps and responses.",
@@ -62,6 +65,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   investor_concern: {
     analysisType: "investor_concern",
+    sourceContextField: "source_text",
     title: "Investor Concern Detector",
     description:
       "Generate the top investor questions with CEO/CFO answers and briefing versions.",
@@ -75,6 +79,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   ir_angle: {
     analysisType: "ir_angle",
+    sourceContextField: "source_text",
     title: "IR Angle Lab",
     description:
       "Generate investor angles, talking points, and deck messages with evidence and cautions.",
@@ -89,6 +94,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   pr_angle: {
     analysisType: "pr_angle",
+    sourceContextField: "story_context",
     title: "PR & Media Angle Generator",
     description:
       "Generate press release, media, and community angles tuned for Malaysian outlets.",
@@ -103,6 +109,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   add_on_opportunity: {
     analysisType: "add_on_opportunity",
+    sourceContextField: "recent_developments",
     title: "Add-On Opportunity Engine",
     description:
       "Score and rank add-on service opportunities with fee ranges and client-ready messages.",
@@ -117,6 +124,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   analyst_qna: {
     analysisType: "analyst_qna",
+    sourceContextField: "source_text",
     title: "Analyst Q&A Builder",
     description:
       "Build a CEO/CFO-ready analyst briefing pack with sensitive questions flagged.",
@@ -158,6 +166,7 @@ export const MODULES: Record<string, ModuleConfig> = {
 
   report_builder_client: {
     analysisType: "report_builder_client",
+    sourceContextField: "context",
     title: "Report Builder",
     description: "Generate client-ready Markdown deliverables.",
     workspaceType: "client_ir_pr",
@@ -298,3 +307,13 @@ export const MODULES: Record<string, ModuleConfig> = {
     submitLabel: "Generate report",
   },
 };
+
+/**
+ * Which input field receives the "Selected Source Documents" context for a
+ * given analysis type. Undefined means the module does not support saved
+ * sources (all private market modules, and client modules without one).
+ */
+export function getSourceContextField(analysisType: string): string | undefined {
+  return Object.values(MODULES).find((m) => m.analysisType === analysisType)
+    ?.sourceContextField;
+}

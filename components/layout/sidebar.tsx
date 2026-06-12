@@ -33,6 +33,7 @@ import {
   FileSpreadsheet,
   Settings,
   LogOut,
+  Loader2,
   ChevronDown,
   Briefcase,
   Lock,
@@ -182,8 +183,10 @@ function NavGroup({
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
+    setSigningOut(true);
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
@@ -252,10 +255,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         />
         <button
           onClick={handleSignOut}
-          className="flex w-full items-center gap-2.5 rounded-md py-[7px] pl-3 pr-2.5 text-[13px] text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+          disabled={signingOut}
+          className="flex w-full items-center gap-2.5 rounded-md py-[7px] pl-3 pr-2.5 text-[13px] text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200 disabled:opacity-60"
         >
-          <LogOut className="h-[15px] w-[15px] text-slate-500" />
-          Sign out
+          {signingOut ? (
+            <Loader2 className="h-[15px] w-[15px] animate-spin text-slate-500" />
+          ) : (
+            <LogOut className="h-[15px] w-[15px] text-slate-500" />
+          )}
+          {signingOut ? "Signing out…" : "Sign out"}
         </button>
       </div>
     </aside>

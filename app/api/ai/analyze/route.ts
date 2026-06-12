@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { runAnalysis } from "@/lib/ai/run-analysis";
 import { PROMPT_TEMPLATES } from "@/lib/prompts/templates";
+import { getSourceContextField } from "@/lib/ai/modules";
+import { buildSourceContext } from "@/lib/sources/build-source-context";
 import type { AnalyzeRequestBody } from "@/types/ai";
 
 export const maxDuration = 120;
@@ -46,6 +48,28 @@ export async function POST(request: Request) {
         { error: "Input too large. Please shorten the pasted material." },
         { status: 400 }
       );
+    }
+
+    // Saved-source injection (client workspace only). The built context goes
+    // into the module's designated field; manually typed text in that field is
+    // preserved as "Additional User Notes" so manual paste keeps working.
+    const selectedSourceIds = Array.isArray(body.selectedSourceIds)
+      ? body.selectedSourceIds
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .slice(0, 10)
+      : [];
+    if (selectedSourceIds.length > 0) {
+      const template = PROMPT_TEMPLATES[body.analysisType];
+      const contextField = getSourceContextField(body.analysisType);
+      if (template.workspaceType === "client_ir_pr" && contextField) {
+        const sourceContext = await buildSourceContext(selectedSourceIds);
+        if (sourceContext) {
+          const manualText = (inputs[contextField] ?? "").trim();
+          inputs[contextField] =
+            `SELECTED SOURCE DOCUMENTS\n\n${sourceContext}\n\n` +
+            `ADDITIONAL USER NOTES\n${manualText || "None provided."}`;
+        }
+      }
     }
 
     const result = await runAnalysis({

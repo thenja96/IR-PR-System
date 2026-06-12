@@ -4,7 +4,7 @@
 // server-side /api/ai/analyze route, and shows the Markdown result with
 // compliance flags and a copy button. Powers most AI module pages.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Loader2,
   Sparkles,
@@ -13,6 +13,7 @@ import {
   Cpu,
   ChevronDown,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,13 @@ import { Markdown } from "@/components/shared/markdown";
 import { CopyButton } from "@/components/shared/copy-button";
 import { cn } from "@/lib/utils";
 import type { ModuleConfig, AnalyzeResponseBody } from "@/types/ai";
+
+// Loaded on demand so private-market pages (which never show the picker)
+// don't carry the Supabase client in their bundle.
+const SourcePicker = dynamic(
+  () => import("@/components/client/source-picker").then((m) => m.SourcePicker),
+  { ssr: false }
+);
 
 export function AnalysisRunner({
   module,
@@ -46,8 +54,48 @@ export function AnalysisRunner({
   const [showSanitized, setShowSanitized] = useState(false);
   const [showViolations, setShowViolations] = useState(false);
 
+  // Saved-source support (client IR/PR modules with a sourceContextField only).
+  // On company detail pages companyId comes in as a prop; on standalone pages
+  // the user picks a company here to load its saved sources.
+  const supportsSources =
+    module.workspaceType === "client_ir_pr" && Boolean(module.sourceContextField);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [internalCompanyId, setInternalCompanyId] = useState("");
+  const [companies, setCompanies] = useState<{ id: string; company_name: string }[]>([]);
+  const effectiveCompanyId = companyId ?? (internalCompanyId || undefined);
+  const showCompanySelect = supportsSources && !companyId;
+
+  useEffect(() => {
+    if (!showCompanySelect) return;
+    let cancelled = false;
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      createClient()
+        .from("companies")
+        .select("id, company_name")
+        .order("company_name")
+        .then(({ data }) => {
+          if (!cancelled) setCompanies(data ?? []);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showCompanySelect]);
+
   function setValue(name: string, value: string) {
     setValues((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleCompanySelect(id: string) {
+    setInternalCompanyId(id);
+    setSelectedSourceIds([]);
+    // Pre-fill the company name field unless the user already typed one.
+    const company = companies.find((c) => c.id === id);
+    if (company && module.fields.some((f) => f.name === "company_name")) {
+      setValues((prev) =>
+        prev.company_name?.trim() ? prev : { ...prev, company_name: company.company_name }
+      );
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -64,7 +112,9 @@ export function AnalysisRunner({
         body: JSON.stringify({
           analysisType: module.analysisType,
           inputs: values,
-          companyId,
+          companyId: effectiveCompanyId,
+          selectedSourceIds:
+            selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
         }),
       });
       const data = await res.json();
@@ -88,29 +138,80 @@ export function AnalysisRunner({
 
   const form = (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {supportsSources && (
+        <div className="space-y-3">
+          {showCompanySelect && (
+            <div className="space-y-1.5">
+              <Label htmlFor={`${module.analysisType}-company`}>
+                Company (loads saved sources)
+              </Label>
+              <Select
+                id={`${module.analysisType}-company`}
+                value={internalCompanyId}
+                onChange={(e) => handleCompanySelect(e.target.value)}
+              >
+                <option value="">— Manual input only —</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.company_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {effectiveCompanyId && (
+            <SourcePicker
+              companyId={effectiveCompanyId}
+              selectedIds={selectedSourceIds}
+              onChange={setSelectedSourceIds}
+            />
+          )}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         {module.fields.map((field) => {
           const isWide = field.type === "textarea";
+          // The source-context field becomes optional notes once saved
+          // sources are selected; manual-only use is unchanged.
+          const isSourceTarget =
+            supportsSources &&
+            field.name === module.sourceContextField &&
+            Boolean(effectiveCompanyId);
+          const label = isSourceTarget
+            ? "Additional notes / manual source text"
+            : field.label;
+          const required =
+            field.required && !(isSourceTarget && selectedSourceIds.length > 0);
           return (
             <div
               key={field.name}
               className={cn("space-y-1.5", isWide && "sm:col-span-2")}
             >
               <Label htmlFor={field.name}>
-                {field.label}
-                {field.required && (
+                {label}
+                {required && (
                   <span className="ml-0.5 text-red-500">*</span>
                 )}
               </Label>
               {field.type === "textarea" ? (
-                <Textarea
-                  id={field.name}
-                  rows={field.rows ?? 5}
-                  placeholder={field.placeholder}
-                  required={field.required}
-                  value={values[field.name] ?? ""}
-                  onChange={(e) => setValue(field.name, e.target.value)}
-                />
+                <>
+                  <Textarea
+                    id={field.name}
+                    rows={field.rows ?? 5}
+                    placeholder={field.placeholder}
+                    required={required}
+                    value={values[field.name] ?? ""}
+                    onChange={(e) => setValue(field.name, e.target.value)}
+                  />
+                  {isSourceTarget && selectedSourceIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {selectedSourceIds.length} saved source
+                      {selectedSourceIds.length > 1 ? "s" : ""} will be sent as
+                      “Selected Source Documents”; this text is included as
+                      “Additional User Notes”.
+                    </p>
+                  )}
+                </>
               ) : field.type === "select" ? (
                 <Select
                   id={field.name}

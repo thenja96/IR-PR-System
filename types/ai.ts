@@ -86,6 +86,8 @@ export interface AnalyzeRequestBody {
   inputs: Record<string, string>;
   workspaceId?: string;
   companyId?: string;
+  /** Saved source_documents ids to inject as "Selected Source Documents" (client workspace only) */
+  selectedSourceIds?: string[];
 }
 
 export interface AnalyzeResponseBody {
@@ -113,4 +115,10 @@ export interface ModuleConfig {
   workspaceType: WorkspaceType;
   fields: ModuleField[];
   submitLabel?: string;
+  /**
+   * Name of the field that receives the built source context when the user
+   * selects saved sources. Also enables the Source Picker for this module.
+   * Client IR/PR modules only.
+   */
+  sourceContextField?: string;
 }
