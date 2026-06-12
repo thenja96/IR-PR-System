@@ -60,6 +60,19 @@ interface UrlPreview {
   textQuality: "ok" | "low" | "none";
   manualFallbackNeeded: boolean;
   isOfficialTier1: boolean;
+  /** True when the official site blocked the automated fetch (e.g. HTTP 403) */
+  fetchBlocked?: boolean;
+  thirdPartyWarning: string | null;
+  debug?: {
+    detectedContentType: string;
+    contentDisposition: string;
+    finalUrl: string;
+    magicBytesPdf: boolean;
+    extractionStatus: string;
+    extractedTextLength: number;
+    pageCount: number;
+    extractionError: string | null;
+  };
   retrievalStatus: string;
   trustTier: SourceTrustTier;
   trustTierReason: string;
@@ -86,6 +99,8 @@ export function SourceUrlImport() {
   const [companyId, setCompanyId] = useState("");
   const [sourceDate, setSourceDate] = useState("");
   const [editedText, setEditedText] = useState("");
+  // Saving a manual-fallback source without text needs explicit confirmation.
+  const [linkOnlyWarning, setLinkOnlyWarning] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -116,6 +131,7 @@ export function SourceUrlImport() {
       setDocumentType(p.suggestedDocumentType);
       setTrustTier(p.trustTier);
       setEditedText(p.extractedText ?? "");
+      setLinkOnlyWarning(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fetch failed.");
     } finally {
@@ -125,10 +141,16 @@ export function SourceUrlImport() {
 
   async function handleSave() {
     if (!preview) return;
+    const trimmed = editedText.trim();
+    // Saving a fallback source without text → require explicit confirmation.
+    if (preview.manualFallbackNeeded && !trimmed && !linkOnlyWarning) {
+      setLinkOnlyWarning(true);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const text = editedText.trim();
+      const text = trimmed;
       // Final retrieval status reflects what actually happened:
       // extracted automatically, pasted manually against an official URL,
       // or saved as a link-only record.
@@ -184,7 +206,7 @@ export function SourceUrlImport() {
     if (p.manualFallbackNeeded) {
       return (
         <Badge variant="danger" className="gap-1">
-          <TriangleAlert className="h-3 w-3" /> Manual fallback needed
+          <TriangleAlert className="h-3 w-3" /> Manual fallback required
         </Badge>
       );
     }
@@ -254,7 +276,10 @@ export function SourceUrlImport() {
               </Badge>
               {preview.isOfficialTier1 && (
                 <Badge variant="success" className="gap-1">
-                  <Landmark className="h-3 w-3" /> Official disclosure source
+                  <Landmark className="h-3 w-3" />
+                  {preview.domain.includes("bursamalaysia")
+                    ? "Official Bursa URL"
+                    : "Official disclosure source"}
                 </Badge>
               )}
               <Badge variant="outline">{preview.domain}</Badge>
@@ -265,12 +290,24 @@ export function SourceUrlImport() {
               )}
             </div>
             <p className="text-xs text-muted-foreground">{preview.trustTierReason}</p>
-            {preview.note && (
-              <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2.5 text-xs text-amber-800">
+            {preview.thirdPartyWarning && (
+              <p className="flex items-start gap-1.5 rounded-md bg-blue-50 p-2.5 text-xs text-blue-800">
                 <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {preview.note}
+                {preview.thirdPartyWarning}
               </p>
             )}
+            {preview.note &&
+              (preview.manualFallbackNeeded || preview.textQuality !== "ok" ? (
+                <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2.5 text-xs text-amber-800">
+                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {preview.note}
+                </p>
+              ) : (
+                <p className="flex items-start gap-1.5 rounded-md bg-teal-50 p-2.5 text-xs text-teal-800">
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {preview.note}
+                </p>
+              ))}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
@@ -323,21 +360,34 @@ export function SourceUrlImport() {
 
             {preview.manualFallbackNeeded ? (
               <div className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50/60 p-3">
-                <Label className="flex items-center gap-1.5 text-amber-900">
-                  <TriangleAlert className="h-3.5 w-3.5" />
+                <Label className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
+                  <TriangleAlert className="h-4 w-4" />
                   {preview.isOfficialTier1
-                    ? "Bursa manual fallback — paste the announcement text"
-                    : "Manual fallback — paste the page text"}
+                    ? "Paste Bursa announcement text here"
+                    : preview.contentType === "pdf"
+                      ? "PDF manual fallback — paste the key sections"
+                      : "Manual fallback — paste the page text"}
                 </Label>
                 <p className="text-xs text-amber-800">
-                  The official URL, title, domain, and trust tier will be saved either
-                  way. Pasting the text here makes the source usable by AI analysis.
+                  The URL, title, domain, and trust tier will be saved either way.
+                  Pasting the text here makes the source usable by AI analysis.
                 </p>
                 <Textarea
-                  rows={8}
+                  rows={10}
                   value={editedText}
-                  onChange={(e) => setEditedText(e.target.value)}
-                  placeholder="Open the page in your browser, copy the announcement / document text, and paste it here…"
+                  onChange={(e) => {
+                    setEditedText(e.target.value);
+                    if (e.target.value.trim()) setLinkOnlyWarning(false);
+                  }}
+                  placeholder={
+                    preview.isOfficialTier1
+                      ? "Copy the announcement text from Bursa Malaysia and paste it here. The system will save it together with the official Bursa URL as a Tier 1 source."
+                      : preview.retrievalStatus === "extraction_failed"
+                        ? "PDF text could not be extracted. Paste the key sections here so the AI can analyse and cite them…"
+                        : preview.contentType === "pdf"
+                          ? "No readable text layer detected. Paste the relevant sections manually…"
+                          : "This source is saved as link-only unless key text is pasted below…"
+                  }
                   className="bg-background"
                 />
               </div>
@@ -362,10 +412,39 @@ export function SourceUrlImport() {
               </div>
             )}
 
+            {preview.debug && (
+              <details className="rounded-md border bg-background/60 px-3 py-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                  Fetch &amp; extraction details
+                </summary>
+                <dl className="mt-1.5 space-y-0.5 font-mono text-[11px] text-muted-foreground">
+                  <div>content-type: {preview.debug.detectedContentType}</div>
+                  <div>content-disposition: {preview.debug.contentDisposition}</div>
+                  <div className="break-all">final url: {preview.debug.finalUrl}</div>
+                  <div>body starts with %PDF: {preview.debug.magicBytesPdf ? "yes" : "no"}</div>
+                  <div>extraction status: {preview.debug.extractionStatus}</div>
+                  <div>
+                    extracted text: {preview.debug.extractedTextLength.toLocaleString()} chars
+                    {preview.debug.pageCount > 0 ? ` · ${preview.debug.pageCount} pages` : ""}
+                  </div>
+                  {preview.debug.extractionError && (
+                    <div className="text-red-600">error: {preview.debug.extractionError}</div>
+                  )}
+                </dl>
+              </details>
+            )}
+
+            {linkOnlyWarning && (
+              <p className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs font-medium text-amber-900">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                This source has no extracted text and cannot be selected for AI analysis
+                until text is added. Save as link-only anyway?
+              </p>
+            )}
             <div className="flex gap-2">
               <Button onClick={handleSave} disabled={saving || !title.trim()}>
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                Confirm &amp; save source
+                {linkOnlyWarning ? "Save as link-only anyway" : "Confirm & save source"}
               </Button>
               <Button
                 type="button"
@@ -373,6 +452,7 @@ export function SourceUrlImport() {
                 onClick={() => {
                   setPreview(null);
                   setError(null);
+                  setLinkOnlyWarning(false);
                 }}
               >
                 Discard

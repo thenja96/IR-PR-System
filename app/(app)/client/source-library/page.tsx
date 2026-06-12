@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const BASE_COLUMNS =
   "id, document_title, document_type, file_name, source_date, created_at, extracted_text, companies(company_name)";
 const INTEL_COLUMNS =
-  ", source_url, source_domain, source_trust_tier, retrieval_status";
+  ", source_url, source_domain, source_trust_tier, retrieval_status, source_usefulness";
 
 export default async function SourceLibraryPage({
   searchParams,

@@ -52,6 +52,49 @@ function validateUrl(raw: string): { url: URL } | { error: string } {
   return { url };
 }
 
+/** Pull the filename out of a Content-Disposition header, if any. */
+function filenameFromDisposition(disposition: string): string | null {
+  if (!disposition) return null;
+  const star = disposition.match(/filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].replace(/["']/g, "").trim());
+    } catch {
+      /* fall through */
+    }
+  }
+  const plain = disposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+  return plain?.[1]?.trim() || null;
+}
+
+/** Turn a filename like "CHINHIN-AnnualReport2025.pdf" into a readable title. */
+function cleanFileTitle(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const cleaned = name
+    .replace(/\.(pdf|aspx?)$/i, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 1 ? cleaned : null;
+}
+
+/**
+ * Classify a PDF report from filename / PDF metadata / leading text.
+ * Report PDFs never default to media_article — "other" is the fallback.
+ */
+function detectPdfDocumentType(haystackRaw: string): string {
+  const haystack = haystackRaw.toLowerCase();
+  if (/annual\s*report|laporan\s*tahunan/.test(haystack)) return "annual_report";
+  if (/quarter|interim|q[1-4]\s*(fy)?\s*20\d{2}|unaudited.*(results|financial)/.test(haystack))
+    return "quarterly_report";
+  if (/presentation|investor\s*deck|corporate\s*deck|briefing\s*deck/.test(haystack))
+    return "investor_deck";
+  if (/press\s*release|media\s*release/.test(haystack)) return "press_release";
+  if (/announcement/.test(haystack)) return "bursa_announcement";
+  // Circulars, prospectuses, sustainability reports have no dedicated type yet.
+  return "other";
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = createClient();
@@ -102,148 +145,263 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
+      // Official Tier 1 domains (Bursa, SC, BNM) often block automated
+      // fetches (403). That is NOT a broken link: return a manual-fallback
+      // preview that preserves the official URL, domain, and Tier 1 tier so
+      // the user can paste the announcement text. No bypassing is attempted.
+      if (isOfficialTier1Domain(domain) && [401, 403, 406].includes(response.status)) {
+        const classification = classifyTrustTier({ url: url.toString(), domain });
+        const isBursa = domain === "bursamalaysia.com" || domain.endsWith(".bursamalaysia.com");
+        return NextResponse.json({
+          url: url.toString(),
+          domain,
+          contentType: "html" as const,
+          title: isBursa ? "Bursa Malaysia announcement" : "Official disclosure page",
+          trustTier: classification.tier,
+          trustTierReason: classification.reason,
+          suggestedDocumentType: isBursa
+            ? "bursa_announcement"
+            : suggestDocumentType(url.toString(), domain),
+          author: null,
+          publication: null,
+          language: null,
+          isOfficialTier1: true,
+          thirdPartyWarning: null,
+          pages: 0,
+          textPreview: "",
+          extractedText: "",
+          textLength: 0,
+          textQuality: "none" as const,
+          manualFallbackNeeded: true,
+          fetchBlocked: true,
+          retrievalStatus: "manual_with_official_url",
+          note: "Bursa Malaysia may block automated text extraction for this page. The URL will be preserved as an official Tier 1 source. Please paste the announcement text below so AI can analyse and cite it.",
+          debug: {
+            detectedContentType: "(blocked before content)",
+            contentDisposition: "(none)",
+            finalUrl: url.toString(),
+            magicBytesPdf: false,
+            extractionStatus: `blocked_http_${response.status}`,
+            extractedTextLength: 0,
+            pageCount: 0,
+            extractionError: null,
+          },
+        });
+      }
       return NextResponse.json(
         { error: `The site responded with HTTP ${response.status}. The page may be blocked or removed — paste the text manually if needed.` },
         { status: 502 }
       );
     }
 
+    // ── Content inspection ───────────────────────────────────
+    // Detect PDFs by (in order of authority): body magic bytes (%PDF-),
+    // Content-Type, Content-Disposition filename, URL ending in .pdf, and
+    // known report-download patterns (e.g. GetReport.aspx) that return PDFs.
     const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
-    const isPdf = contentType.includes("application/pdf") || url.pathname.toLowerCase().endsWith(".pdf");
+    const contentDisposition = response.headers.get("content-disposition") ?? "";
+    const finalUrl = response.url || url.toString();
+    const finalPath = (() => {
+      try {
+        return new URL(finalUrl).pathname.toLowerCase();
+      } catch {
+        return url.pathname.toLowerCase();
+      }
+    })();
+    const finalDomain = (() => {
+      try {
+        return new URL(finalUrl).hostname.toLowerCase().replace(/^www\./, "");
+      } catch {
+        return domain;
+      }
+    })();
 
-    if (isPdf) {
-      // Phase 3B: extract PDF text server-side (annual/quarterly reports,
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_PDF_BYTES) {
+      return NextResponse.json(
+        { error: `This file is too large to process (${Math.round(contentLength / 1_000_000)} MB, limit 15 MB). Save it via Manual Paste with the key sections instead.` },
+        { status: 413 }
+      );
+    }
+
+    let buffer: ArrayBuffer;
+    try {
+      buffer = await response.arrayBuffer();
+    } catch {
+      return NextResponse.json(
+        { error: "The response body could not be downloaded fully. Try again, or paste the text manually." },
+        { status: 502 }
+      );
+    }
+    if (buffer.byteLength > MAX_PDF_BYTES) {
+      return NextResponse.json(
+        { error: "This file exceeds the 15 MB processing limit. Save it via Manual Paste with the key sections instead." },
+        { status: 413 }
+      );
+    }
+
+    const headBytes = new Uint8Array(buffer.slice(0, 1024));
+    let headString = "";
+    for (let i = 0; i < headBytes.length; i++) headString += String.fromCharCode(headBytes[i]);
+    const magicBytesPdf = headString.includes("%PDF-");
+    const headerSaysPdf =
+      contentType.includes("application/pdf") || /\.pdf("|'|;|\s|$)/i.test(contentDisposition);
+    const urlLooksPdf =
+      finalPath.endsWith(".pdf") ||
+      /getreport|get_report|downloadreport|download_report|getattachment|getfile|\bdl\.aspx/i.test(
+        finalPath
+      );
+    const treatAsPdf = magicBytesPdf || headerSaysPdf || (urlLooksPdf && !contentType.includes("text/html"));
+
+    if (treatAsPdf) {
+      // PDF branch: extract text server-side (annual/quarterly reports,
       // decks, circulars, prospectuses, sustainability reports).
-      const fileName = decodeURIComponent(url.pathname.split("/").pop() ?? "document.pdf");
-      const fallbackTitle =
-        fileName.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ").trim() || "PDF document";
-      const classification = classifyTrustTier({ url: url.toString(), domain });
-      const base = {
-        url: url.toString(),
-        domain,
-        contentType: "pdf" as const,
-        title: fallbackTitle,
-        trustTier: classification.tier,
-        trustTierReason: classification.reason,
-        suggestedDocumentType: suggestDocumentType(url.toString(), domain),
-        author: null,
-        publication: null,
-        language: null,
-        isOfficialTier1: isOfficialTier1Domain(domain),
+      const dispositionName = filenameFromDisposition(contentDisposition);
+      const urlFileName = decodeURIComponent(finalPath.split("/").pop() ?? "") || "document.pdf";
+      const classification = classifyTrustTier({ url: finalUrl, domain: finalDomain });
+
+      const debugBase = {
+        detectedContentType: contentType || "(none)",
+        contentDisposition: contentDisposition || "(none)",
+        finalUrl,
+        magicBytesPdf,
       };
 
-      const contentLength = Number(response.headers.get("content-length") ?? 0);
-      if (contentLength > MAX_PDF_BYTES) {
+      const buildPdfResponse = (params: {
+        title: string;
+        documentType: string;
+        text: string;
+        pages: number;
+        textQuality: "ok" | "low" | "none";
+        retrievalStatus: string;
+        note: string | null;
+        extractionStatus: string;
+        extractionError?: string | null;
+      }) => {
+        const thirdPartyWarning =
+          classification.tier !== "tier_1" && classification.tier !== "tier_2" &&
+          ["annual_report", "quarterly_report", "investor_deck", "bursa_announcement", "press_release", "other"].includes(
+            params.documentType
+          )
+            ? "Third-party source. Prefer Bursa Malaysia or the company's IR website for Tier 1 official disclosure."
+            : null;
         return NextResponse.json({
-          ...base,
-          textPreview: "",
-          extractedText: "",
-          textLength: 0,
-          pages: 0,
-          textQuality: "none",
-          manualFallbackNeeded: true,
-          retrievalStatus: "link_only",
-          note: `This PDF is too large to extract (${Math.round(contentLength / 1_000_000)} MB, limit 15 MB). The link will be saved — paste the key sections manually so the AI can analyse and cite them.`,
+          url: finalUrl,
+          domain: finalDomain,
+          contentType: "pdf" as const,
+          title: params.title,
+          trustTier: classification.tier,
+          trustTierReason: classification.reason,
+          suggestedDocumentType: params.documentType,
+          author: null,
+          publication: null,
+          language: null,
+          isOfficialTier1: isOfficialTier1Domain(finalDomain),
+          thirdPartyWarning,
+          textPreview: params.text.slice(0, PREVIEW_CHARS),
+          extractedText: params.text,
+          textLength: params.text.length,
+          pages: params.pages,
+          textQuality: params.textQuality,
+          manualFallbackNeeded: params.text.length === 0,
+          retrievalStatus: params.retrievalStatus,
+          note: params.note,
+          debug: {
+            ...debugBase,
+            extractionStatus: params.extractionStatus,
+            extractedTextLength: params.text.length,
+            pageCount: params.pages,
+            extractionError: params.extractionError ?? null,
+          },
         });
-      }
-
-      let buffer: ArrayBuffer;
-      try {
-        buffer = await response.arrayBuffer();
-      } catch {
-        return NextResponse.json({
-          ...base,
-          textPreview: "",
-          extractedText: "",
-          textLength: 0,
-          pages: 0,
-          textQuality: "none",
-          manualFallbackNeeded: true,
-          retrievalStatus: "link_only",
-          note: "The PDF could not be downloaded fully. The link will be saved — paste the key sections manually.",
-        });
-      }
-      if (buffer.byteLength > MAX_PDF_BYTES) {
-        return NextResponse.json({
-          ...base,
-          textPreview: "",
-          extractedText: "",
-          textLength: 0,
-          pages: 0,
-          textQuality: "none",
-          manualFallbackNeeded: true,
-          retrievalStatus: "link_only",
-          note: "This PDF exceeds the 15 MB extraction limit. The link will be saved — paste the key sections manually.",
-        });
-      }
+      };
 
       try {
         const extraction = await extractPdfText(buffer);
+        const title =
+          cleanFileTitle(dispositionName) ??
+          extraction.docTitle ??
+          cleanFileTitle(urlFileName) ??
+          "PDF document";
+        const documentType = detectPdfDocumentType(
+          `${dispositionName ?? ""} ${extraction.docTitle ?? ""} ${urlFileName} ${extraction.text.slice(0, 3000)}`
+        );
+
         if (extraction.quality === "none") {
-          return NextResponse.json({
-            ...base,
-            textPreview: "",
-            extractedText: "",
-            textLength: 0,
+          return buildPdfResponse({
+            title,
+            documentType,
+            text: "",
             pages: extraction.pages,
             textQuality: "none",
-            manualFallbackNeeded: true,
             retrievalStatus: "link_only",
-            note: "No selectable text found — this is likely a scanned or image-based PDF. The link will be saved; paste the key sections manually so the AI can analyse and cite them.",
+            note: "No readable text layer detected. Paste the relevant sections manually.",
+            extractionStatus: "no_text_layer",
           });
         }
-        return NextResponse.json({
-          ...base,
-          textPreview: extraction.text.slice(0, PREVIEW_CHARS),
-          extractedText: extraction.text,
-          textLength: extraction.text.length,
+        return buildPdfResponse({
+          title,
+          documentType,
+          text: extraction.text,
           pages: extraction.pages,
           textQuality: extraction.quality,
-          manualFallbackNeeded: false,
           retrievalStatus: "text_extracted",
           note:
             extraction.quality === "low"
-              ? `Only ${extraction.text.length.toLocaleString()} characters were extracted from ${extraction.pages} pages — the PDF may be mostly scanned images. Review the preview and paste missing sections before saving.`
-              : null,
+              ? `Text extracted from PDF, but only ${extraction.text.length.toLocaleString()} characters across ${extraction.pages} pages — likely mostly scanned images. Review and add missing sections before saving.`
+              : "Text extracted from PDF. Please review before saving.",
+          extractionStatus: "extracted",
         });
       } catch (err) {
         console.error("PDF extraction failed:", err);
-        return NextResponse.json({
-          ...base,
-          textPreview: "",
-          extractedText: "",
-          textLength: 0,
+        const title =
+          cleanFileTitle(dispositionName) ?? cleanFileTitle(urlFileName) ?? "PDF document";
+        return buildPdfResponse({
+          title,
+          documentType: detectPdfDocumentType(`${dispositionName ?? ""} ${urlFileName}`),
+          text: "",
           pages: 0,
           textQuality: "none",
-          manualFallbackNeeded: true,
           retrievalStatus: "extraction_failed",
-          note: "PDF text extraction failed (the file may be corrupted or protected). The link will be saved — paste the key sections manually.",
+          note: "PDF text could not be extracted. Paste the key sections here so the AI can analyse and cite them.",
+          extractionStatus: "failed",
+          extractionError: err instanceof Error ? err.message : String(err),
         });
       }
     }
 
-    let html = await response.text();
-    if (html.length > MAX_HTML_BYTES) {
-      html = html.slice(0, MAX_HTML_BYTES);
-    }
+    const html = new TextDecoder("utf-8", { fatal: false }).decode(
+      buffer.byteLength > MAX_HTML_BYTES ? buffer.slice(0, MAX_HTML_BYTES) : buffer
+    );
 
     const extracted = extractFromHtml(html);
     const text = extracted.text.slice(0, MAX_EXTRACTED_CHARS);
-    const classification = classifyTrustTier({ url: url.toString(), domain });
-    const isOfficialTier1 = isOfficialTier1Domain(domain);
+    const classification = classifyTrustTier({ url: finalUrl, domain: finalDomain });
+    const isOfficialTier1 = isOfficialTier1Domain(finalDomain);
     const htmlBase = {
-      url: url.toString(),
-      domain,
+      url: finalUrl,
+      domain: finalDomain,
       contentType: "html" as const,
       title: extracted.title,
       trustTier: classification.tier,
       trustTierReason: classification.reason,
-      suggestedDocumentType: suggestDocumentType(url.toString(), domain),
+      suggestedDocumentType: suggestDocumentType(finalUrl, finalDomain),
       author: extracted.author,
       publication: extracted.publication,
       language: extracted.language,
       isOfficialTier1,
+      thirdPartyWarning: null,
       pages: 0,
+      debug: {
+        detectedContentType: contentType || "(none)",
+        contentDisposition: contentDisposition || "(none)",
+        finalUrl,
+        magicBytesPdf,
+        extractionStatus: "html",
+        extractedTextLength: text.length,
+        pageCount: 0,
+        extractionError: null,
+      },
     };
 
     if (text.trim().length < 80) {
@@ -260,7 +418,8 @@ export async function POST(request: Request) {
         retrievalStatus: isOfficialTier1 ? "manual_with_official_url" : "link_only",
         note: isOfficialTier1
           ? "This Bursa Malaysia page is JavaScript-rendered, so the announcement text could not be captured automatically. Paste the announcement text below — the official URL and Tier 1 classification will be kept."
-          : "Very little readable text was found (the page may be JavaScript-rendered or behind a paywall). Paste the text below, or save the link only.",
+          : "This source is saved as link-only unless key text is pasted below.",
+        debug: { ...htmlBase.debug, extractionStatus: "html_too_little_text", extractedTextLength: 0 },
       });
     }
 
