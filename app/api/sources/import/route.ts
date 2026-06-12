@@ -4,6 +4,8 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { classifyTextQuality } from "@/lib/sources/extract-pdf";
+import { usefulnessForDocumentType } from "@/lib/sources/trust-tier";
 
 const DOCUMENT_TYPES = [
   "annual_report",
@@ -19,7 +21,16 @@ const DOCUMENT_TYPES = [
 ];
 
 const TRUST_TIERS = ["tier_1", "tier_2", "tier_3", "tier_4"];
-const RETRIEVAL_STATUSES = ["manual", "fetched", "fetch_failed", "pdf_link_only"];
+const RETRIEVAL_STATUSES = [
+  "manual",
+  "fetched",
+  "fetch_failed",
+  "pdf_link_only",
+  "text_extracted",
+  "link_only",
+  "extraction_failed",
+  "manual_with_official_url",
+];
 
 interface ImportRequestBody {
   title?: string;
@@ -99,6 +110,8 @@ export async function POST(request: Request) {
     }
 
     const retrievedAt = new Date().toISOString();
+    const textQuality = classifyTextQuality(extractedText);
+    const usefulness = usefulnessForDocumentType(documentType);
     const citation = {
       title,
       url: body.url ?? null,
@@ -108,6 +121,8 @@ export async function POST(request: Request) {
       source_date: body.sourceDate ?? null,
       trust_tier: trustTier,
       retrieved_at: retrievedAt,
+      text_quality: textQuality,
+      usefulness,
     };
 
     const { data: inserted, error: insertError } = await supabase
@@ -129,17 +144,22 @@ export async function POST(request: Request) {
         source_publication: body.publication ?? null,
         source_language: body.language ?? null,
         source_citation: citation,
+        source_usefulness: usefulness,
       })
       .select("id")
       .single();
 
     if (insertError) {
       // Most likely cause: migration 0002 not applied yet.
-      if (/source_trust_tier|source_url|retrieval_status|schema cache/i.test(insertError.message)) {
+      if (
+        /source_trust_tier|source_url|retrieval_status|source_usefulness|schema cache/i.test(
+          insertError.message
+        )
+      ) {
         return NextResponse.json(
           {
             error:
-              "Database is missing the Source Intelligence columns. Run supabase/migrations/0002_source_intelligence.sql first.",
+              "Database is missing Source Intelligence columns or statuses. Run supabase/migrations/0002_source_intelligence.sql and 0003_source_extraction.sql first.",
           },
           { status: 500 }
         );

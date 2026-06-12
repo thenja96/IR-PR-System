@@ -6,12 +6,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractFromHtml } from "@/lib/sources/extract";
-import { classifyTrustTier, suggestDocumentType } from "@/lib/sources/trust-tier";
+import { classifyTextQuality, extractPdfText } from "@/lib/sources/extract-pdf";
+import {
+  classifyTrustTier,
+  isOfficialTier1Domain,
+  suggestDocumentType,
+} from "@/lib/sources/trust-tier";
 
 export const maxDuration = 60;
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_HTML_BYTES = 2_000_000;
+const MAX_PDF_BYTES = 15_000_000;
 const MAX_EXTRACTED_CHARS = 150_000;
 const PREVIEW_CHARS = 1_500;
 
@@ -106,26 +112,114 @@ export async function POST(request: Request) {
     const isPdf = contentType.includes("application/pdf") || url.pathname.toLowerCase().endsWith(".pdf");
 
     if (isPdf) {
-      // Phase 1: PDFs are saved as link-only sources; text must be pasted manually.
+      // Phase 3B: extract PDF text server-side (annual/quarterly reports,
+      // decks, circulars, prospectuses, sustainability reports).
       const fileName = decodeURIComponent(url.pathname.split("/").pop() ?? "document.pdf");
+      const fallbackTitle =
+        fileName.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ").trim() || "PDF document";
       const classification = classifyTrustTier({ url: url.toString(), domain });
-      return NextResponse.json({
+      const base = {
         url: url.toString(),
         domain,
-        contentType: "pdf",
-        title: fileName.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ").trim() || "PDF document",
-        textPreview: "",
-        extractedText: "",
-        textLength: 0,
-        retrievalStatus: "pdf_link_only",
+        contentType: "pdf" as const,
+        title: fallbackTitle,
         trustTier: classification.tier,
         trustTierReason: classification.reason,
         suggestedDocumentType: suggestDocumentType(url.toString(), domain),
         author: null,
         publication: null,
         language: null,
-        note: "PDF detected. Phase 1 saves the PDF link and metadata only — paste the key sections into the text box so the AI can analyse and cite them.",
-      });
+        isOfficialTier1: isOfficialTier1Domain(domain),
+      };
+
+      const contentLength = Number(response.headers.get("content-length") ?? 0);
+      if (contentLength > MAX_PDF_BYTES) {
+        return NextResponse.json({
+          ...base,
+          textPreview: "",
+          extractedText: "",
+          textLength: 0,
+          pages: 0,
+          textQuality: "none",
+          manualFallbackNeeded: true,
+          retrievalStatus: "link_only",
+          note: `This PDF is too large to extract (${Math.round(contentLength / 1_000_000)} MB, limit 15 MB). The link will be saved — paste the key sections manually so the AI can analyse and cite them.`,
+        });
+      }
+
+      let buffer: ArrayBuffer;
+      try {
+        buffer = await response.arrayBuffer();
+      } catch {
+        return NextResponse.json({
+          ...base,
+          textPreview: "",
+          extractedText: "",
+          textLength: 0,
+          pages: 0,
+          textQuality: "none",
+          manualFallbackNeeded: true,
+          retrievalStatus: "link_only",
+          note: "The PDF could not be downloaded fully. The link will be saved — paste the key sections manually.",
+        });
+      }
+      if (buffer.byteLength > MAX_PDF_BYTES) {
+        return NextResponse.json({
+          ...base,
+          textPreview: "",
+          extractedText: "",
+          textLength: 0,
+          pages: 0,
+          textQuality: "none",
+          manualFallbackNeeded: true,
+          retrievalStatus: "link_only",
+          note: "This PDF exceeds the 15 MB extraction limit. The link will be saved — paste the key sections manually.",
+        });
+      }
+
+      try {
+        const extraction = await extractPdfText(buffer);
+        if (extraction.quality === "none") {
+          return NextResponse.json({
+            ...base,
+            textPreview: "",
+            extractedText: "",
+            textLength: 0,
+            pages: extraction.pages,
+            textQuality: "none",
+            manualFallbackNeeded: true,
+            retrievalStatus: "link_only",
+            note: "No selectable text found — this is likely a scanned or image-based PDF. The link will be saved; paste the key sections manually so the AI can analyse and cite them.",
+          });
+        }
+        return NextResponse.json({
+          ...base,
+          textPreview: extraction.text.slice(0, PREVIEW_CHARS),
+          extractedText: extraction.text,
+          textLength: extraction.text.length,
+          pages: extraction.pages,
+          textQuality: extraction.quality,
+          manualFallbackNeeded: false,
+          retrievalStatus: "text_extracted",
+          note:
+            extraction.quality === "low"
+              ? `Only ${extraction.text.length.toLocaleString()} characters were extracted from ${extraction.pages} pages — the PDF may be mostly scanned images. Review the preview and paste missing sections before saving.`
+              : null,
+        });
+      } catch (err) {
+        console.error("PDF extraction failed:", err);
+        return NextResponse.json({
+          ...base,
+          textPreview: "",
+          extractedText: "",
+          textLength: 0,
+          pages: 0,
+          textQuality: "none",
+          manualFallbackNeeded: true,
+          retrievalStatus: "extraction_failed",
+          note: "PDF text extraction failed (the file may be corrupted or protected). The link will be saved — paste the key sections manually.",
+        });
+      }
     }
 
     let html = await response.text();
@@ -136,33 +230,53 @@ export async function POST(request: Request) {
     const extracted = extractFromHtml(html);
     const text = extracted.text.slice(0, MAX_EXTRACTED_CHARS);
     const classification = classifyTrustTier({ url: url.toString(), domain });
-
-    if (text.trim().length < 80) {
-      return NextResponse.json(
-        {
-          error:
-            "Very little readable text was found on this page (it may be JavaScript-rendered or behind a paywall). Paste the text manually instead.",
-        },
-        { status: 422 }
-      );
-    }
-
-    return NextResponse.json({
+    const isOfficialTier1 = isOfficialTier1Domain(domain);
+    const htmlBase = {
       url: url.toString(),
       domain,
-      contentType: "html",
+      contentType: "html" as const,
       title: extracted.title,
-      textPreview: text.slice(0, PREVIEW_CHARS),
-      extractedText: text,
-      textLength: text.length,
-      retrievalStatus: "fetched",
       trustTier: classification.tier,
       trustTierReason: classification.reason,
       suggestedDocumentType: suggestDocumentType(url.toString(), domain),
       author: extracted.author,
       publication: extracted.publication,
       language: extracted.language,
-      note: null,
+      isOfficialTier1,
+      pages: 0,
+    };
+
+    if (text.trim().length < 80) {
+      // JavaScript-rendered (common for Bursa announcement pages) or paywalled.
+      // Not an error: return a manual-fallback preview so the user can paste
+      // the text while keeping the official URL, title, and trust tier.
+      return NextResponse.json({
+        ...htmlBase,
+        textPreview: "",
+        extractedText: "",
+        textLength: 0,
+        textQuality: "none",
+        manualFallbackNeeded: true,
+        retrievalStatus: isOfficialTier1 ? "manual_with_official_url" : "link_only",
+        note: isOfficialTier1
+          ? "This Bursa Malaysia page is JavaScript-rendered, so the announcement text could not be captured automatically. Paste the announcement text below — the official URL and Tier 1 classification will be kept."
+          : "Very little readable text was found (the page may be JavaScript-rendered or behind a paywall). Paste the text below, or save the link only.",
+      });
+    }
+
+    const textQuality = classifyTextQuality(text);
+    return NextResponse.json({
+      ...htmlBase,
+      textPreview: text.slice(0, PREVIEW_CHARS),
+      extractedText: text,
+      textLength: text.length,
+      textQuality,
+      manualFallbackNeeded: false,
+      retrievalStatus: "text_extracted",
+      note:
+        textQuality === "low"
+          ? "Only a small amount of text was captured — review the preview and add missing sections before saving."
+          : null,
     });
   } catch (err) {
     console.error("fetch-url error:", err);

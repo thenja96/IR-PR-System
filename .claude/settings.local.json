@@ -11,7 +11,8 @@
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/dashboard\" -UseBasicParsing -TimeoutSec 60 -MaximumRedirection 0 -ErrorAction Stop; \"dashboard \\(logged out\\): HTTP $\\($r.StatusCode\\)\" } catch { $resp = $_.Exception.Response; if \\($resp\\) { \"dashboard \\(logged out\\): HTTP $\\([int]$resp.StatusCode\\) → redirect to $\\($resp.Headers['Location']\\)\" } else { \"FAILED: $\\($_.Exception.Message\\)\" } })",
       "PowerShell(npm run typecheck)",
       "PowerShell(npm run build)",
-      "PowerShell(try { Remove-Item -Recurse -Force \".next\" -ErrorAction Stop; \"Deleted .next\" } catch { \"Could not fully delete .next: $\\($_.Exception.Message\\)\" })"
+      "PowerShell(try { Remove-Item -Recurse -Force \".next\" -ErrorAction Stop; \"Deleted .next\" } catch { \"Could not fully delete .next: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(npm install unpdf)"
     ]
   }
 }

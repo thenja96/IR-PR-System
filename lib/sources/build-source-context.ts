@@ -5,9 +5,13 @@
 import { createClient } from "@/lib/supabase/server";
 import {
   TRUST_TIER_LABELS,
+  USEFULNESS_LABELS,
   tierForDocumentType,
+  usefulnessForDocumentType,
   type SourceTrustTier,
+  type SourceUsefulness,
 } from "@/lib/sources/trust-tier";
+import { classifyTextQuality } from "@/lib/sources/extract-pdf";
 
 const MAX_SOURCES = 10;
 const MAX_CHARS_PER_SOURCE = 25_000;
@@ -22,6 +26,7 @@ interface SourceContextRow {
   source_domain: string | null;
   source_trust_tier: string | null;
   retrieval_status: string | null;
+  source_usefulness: string | null;
   extracted_text: string | null;
 }
 
@@ -42,18 +47,23 @@ export async function buildSourceContext(sourceIds: string[]): Promise<string> {
   if (ids.length === 0) return "";
 
   const supabase = createClient();
-  const { data, error } = await supabase
+  const baseColumns =
+    "id, document_title, document_type, source_date, source_url, source_domain, source_trust_tier, retrieval_status, extracted_text";
+  const primary = await supabase
     .from("source_documents")
-    .select(
-      "id, document_title, document_type, source_date, source_url, source_domain, source_trust_tier, retrieval_status, extracted_text"
-    )
+    .select(`${baseColumns}, source_usefulness`)
     .in("id", ids);
-
-  if (error) {
-    console.error("buildSourceContext fetch error:", error);
-    return "";
+  let rowsData: unknown = primary.data;
+  if (primary.error) {
+    // Migration 0003 not applied — retry without the usefulness column.
+    const fallback = await supabase.from("source_documents").select(baseColumns).in("id", ids);
+    if (fallback.error) {
+      console.error("buildSourceContext fetch error:", fallback.error);
+      return "";
+    }
+    rowsData = fallback.data;
   }
-  const rows = (data ?? []) as SourceContextRow[];
+  const rows = ((rowsData ?? []) as SourceContextRow[]);
   if (rows.length === 0) return "";
 
   // Highest-trust first so the model anchors on official disclosure.
@@ -68,6 +78,9 @@ export async function buildSourceContext(sourceIds: string[]): Promise<string> {
   const blocks = rows.map((row, index) => {
     const tier = (row.source_trust_tier ??
       tierForDocumentType(row.document_type)) as SourceTrustTier;
+    const usefulness = (row.source_usefulness ??
+      usefulnessForDocumentType(row.document_type)) as SourceUsefulness;
+    const quality = classifyTextQuality(row.extracted_text ?? "");
 
     let text = (row.extracted_text ?? "").trim();
     let textNote = "";
@@ -97,7 +110,11 @@ export async function buildSourceContext(sourceIds: string[]): Promise<string> {
       `URL: ${row.source_url ?? "not available"}`,
       `Domain: ${row.source_domain ?? "not available"}`,
       `Trust Tier: ${TRUST_TIER_LABELS[tier] ?? tier}`,
-      `Retrieval Status: ${row.retrieval_status ?? "manual"}`,
+      `Usefulness: ${USEFULNESS_LABELS[usefulness] ?? usefulness}`,
+      `Retrieval Status: ${(row.retrieval_status ?? "manual").replace(/_/g, " ")}`,
+      quality === "low"
+        ? `Text Quality Warning: extracted text appears incomplete — treat it as partial material and mark anything it cannot support "requires verification".`
+        : "",
       `Text:`,
       text || textNote,
       text && textNote ? textNote : "",

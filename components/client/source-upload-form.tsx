@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Upload } from "lucide-react";
+import { FileSearch, Loader2, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { tierForDocumentType } from "@/lib/sources/trust-tier";
+import { tierForDocumentType, usefulnessForDocumentType } from "@/lib/sources/trust-tier";
 import type { Company } from "@/types/database";
 
 const DOCUMENT_TYPES = [
@@ -37,6 +37,8 @@ export function SourceUploadForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractNote, setExtractNote] = useState<string | null>(null);
   const [form, setForm] = useState({
     document_title: "",
     document_type: "annual_report",
@@ -56,6 +58,43 @@ export function SourceUploadForm() {
 
   function set(name: string, value: string) {
     setForm((p) => ({ ...p, [name]: value }));
+  }
+
+  const fileIsPdf =
+    file != null &&
+    (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+
+  async function handleExtractPdf() {
+    if (!file) return;
+    setExtracting(true);
+    setExtractNote(null);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/sources/extract-pdf", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "PDF extraction failed.");
+      if (data.text) {
+        setForm((p) => ({
+          ...p,
+          extracted_text: p.extracted_text
+            ? `${p.extracted_text}\n\n${data.text}`
+            : data.text,
+        }));
+      }
+      setExtractNote(
+        data.note ??
+          `Extracted ${Number(data.textLength).toLocaleString()} characters from ${data.pages} pages. Review and edit before saving.`
+      );
+    } catch (err) {
+      setExtractNote(err instanceof Error ? err.message : "PDF extraction failed.");
+    } finally {
+      setExtracting(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -116,9 +155,15 @@ export function SourceUploadForm() {
       let { error: insertError } = await supabase.from("source_documents").insert({
         ...basePayload,
         source_trust_tier: tierForDocumentType(form.document_type),
+        source_usefulness: usefulnessForDocumentType(form.document_type),
         retrieval_status: "manual",
       });
-      if (insertError && /source_trust_tier|retrieval_status|schema cache/i.test(insertError.message)) {
+      if (
+        insertError &&
+        /source_trust_tier|retrieval_status|source_usefulness|schema cache/i.test(
+          insertError.message
+        )
+      ) {
         ({ error: insertError } = await supabase.from("source_documents").insert(basePayload));
       }
       if (insertError) throw insertError;
@@ -201,9 +246,36 @@ export function SourceUploadForm() {
             <Label>File (optional)</Label>
             <Input
               type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                setExtractNote(null);
+              }}
               className="pt-1.5"
             />
+            {fileIsPdf && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExtractPdf}
+                  disabled={extracting}
+                >
+                  {extracting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileSearch className="h-3.5 w-3.5" />
+                  )}
+                  {extracting ? "Extracting…" : "Extract text from PDF"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Fills the text box below — review before saving.
+                </span>
+              </div>
+            )}
+            {extractNote && (
+              <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800">{extractNote}</p>
+            )}
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Document text (paste here for AI analysis)</Label>

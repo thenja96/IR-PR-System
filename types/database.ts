@@ -60,9 +60,22 @@ export type DocumentType =
   | "trading_note"
   | "other";
 
-// Source Intelligence (migration 0002)
+// Source Intelligence (migrations 0002 + 0003)
 export type SourceTrustTier = "tier_1" | "tier_2" | "tier_3" | "tier_4";
-export type RetrievalStatus = "manual" | "fetched" | "fetch_failed" | "pdf_link_only";
+export type RetrievalStatus =
+  | "manual"
+  | "fetched"
+  | "fetch_failed"
+  | "pdf_link_only"
+  | "text_extracted"
+  | "link_only"
+  | "extraction_failed"
+  | "manual_with_official_url";
+export type SourceUsefulness =
+  | "high_usefulness"
+  | "medium_usefulness"
+  | "context_only"
+  | "low_usefulness";
 
 export interface SourceCitation {
   title: string;
@@ -97,6 +110,8 @@ export interface SourceDocument {
   source_publication: string | null;
   source_language: string | null;
   source_citation: SourceCitation | null;
+  /** Phase 3B (migration 0003) — null on older records */
+  source_usefulness: SourceUsefulness | null;
   created_at: string;
   updated_at: string;
 }

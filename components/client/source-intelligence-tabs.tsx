@@ -19,6 +19,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { SourceUploadForm } from "@/components/client/source-upload-form";
 import { SourceUrlImport } from "@/components/client/source-url-import";
+import { SourceDiscovery } from "@/components/client/source-discovery";
 import { formatDate } from "@/lib/utils";
 import {
   TRUST_TIER_SHORT_LABELS,
@@ -48,12 +49,29 @@ export interface SourceListRow {
   companies: { company_name: string } | null;
 }
 
-export function SourceIntelligenceTabs({ sources }: { sources: SourceListRow[] }) {
+export interface DiscoveryPrefill {
+  companyId?: string;
+  companyName?: string;
+  stockCode?: string;
+}
+
+export function SourceIntelligenceTabs({
+  sources,
+  initialTab,
+  discoveryPrefill,
+}: {
+  sources: SourceListRow[];
+  initialTab?: string;
+  discoveryPrefill?: DiscoveryPrefill;
+}) {
+  const validTabs = ["manual", "url", "discover", "saved"];
+  const defaultTab = initialTab && validTabs.includes(initialTab) ? initialTab : "manual";
   return (
-    <Tabs defaultValue="manual">
+    <Tabs defaultValue={defaultTab}>
       <TabsList>
         <TabsTrigger value="manual">Manual Paste</TabsTrigger>
         <TabsTrigger value="url">URL Import</TabsTrigger>
+        <TabsTrigger value="discover">Find Sources</TabsTrigger>
         <TabsTrigger value="saved">Saved Sources ({sources.length})</TabsTrigger>
       </TabsList>
 
@@ -63,6 +81,14 @@ export function SourceIntelligenceTabs({ sources }: { sources: SourceListRow[] }
 
       <TabsContent value="url">
         <SourceUrlImport />
+      </TabsContent>
+
+      <TabsContent value="discover">
+        <SourceDiscovery
+          initialCompanyId={discoveryPrefill?.companyId}
+          initialCompanyName={discoveryPrefill?.companyName}
+          initialStockCode={discoveryPrefill?.stockCode}
+        />
       </TabsContent>
 
       <TabsContent value="saved">
@@ -127,7 +153,11 @@ export function SourceIntelligenceTabs({ sources }: { sources: SourceListRow[] }
                             <Badge variant="success">text available</Badge>
                           ) : (
                             <Badge variant="warning">
-                              {doc.retrieval_status === "pdf_link_only" ? "link only" : "file only"}
+                              {["pdf_link_only", "link_only", "fetch_failed", "extraction_failed"].includes(
+                                doc.retrieval_status ?? ""
+                              )
+                                ? "link only — paste text"
+                                : "file only"}
                             </Badge>
                           )}
                         </TableCell>

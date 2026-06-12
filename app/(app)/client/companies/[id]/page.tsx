@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Globe, Hash, Landmark, Layers, UserCircle2 } from "lucide-react";
+import { Compass, Globe, Hash, Landmark, Layers, UserCircle2 } from "lucide-react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { CompanyTabs } from "@/components/client/company-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -127,15 +127,28 @@ export default async function CompanyDetailPage({
               </p>
             )}
           </div>
-          {c.website && (
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Link
-              href={c.website}
-              target="_blank"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-white/15"
+              href={`/client/source-library?${new URLSearchParams({
+                tab: "discover",
+                companyId: c.id,
+                companyName: c.company_name,
+                ...(c.stock_code ? { stockCode: c.stock_code } : {}),
+              }).toString()}`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-teal-500/90 px-3 py-1.5 text-xs font-medium text-navy transition-colors hover:bg-teal-400"
             >
-              <Globe className="h-3.5 w-3.5 text-teal-400" /> Website
+              <Compass className="h-3.5 w-3.5" /> Find latest sources
             </Link>
-          )}
+            {c.website && (
+              <Link
+                href={c.website}
+                target="_blank"
+                className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-white/15"
+              >
+                <Globe className="h-3.5 w-3.5 text-teal-400" /> Website
+              </Link>
+            )}
+          </div>
         </div>
         {/* Mini stat strip */}
         <div className="relative grid grid-cols-2 gap-px border-t border-white/10 bg-white/5 sm:grid-cols-4">

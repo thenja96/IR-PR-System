@@ -2,11 +2,23 @@
 
 // URL Import tab of the Source Intelligence Centre.
 // Step 1: paste a URL → server fetches and returns a preview (nothing saved).
-// Step 2: user reviews title/type/tier/text → confirms → /api/sources/import.
+//   - HTML pages: readable text extracted
+//   - PDFs: text extracted server-side (Phase 3B)
+//   - JS-rendered / paywalled pages (incl. Bursa announcements): manual
+//     fallback panel keeps the official URL + tier while text is pasted.
+// Step 2: user reviews and EDITS the extracted text → confirms → import.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Loader2, Link2, CheckCircle2 } from "lucide-react";
+import {
+  CheckCircle2,
+  FileWarning,
+  Globe,
+  Landmark,
+  Link2,
+  Loader2,
+  TriangleAlert,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +56,10 @@ interface UrlPreview {
   textPreview: string;
   extractedText: string;
   textLength: number;
+  pages: number;
+  textQuality: "ok" | "low" | "none";
+  manualFallbackNeeded: boolean;
+  isOfficialTier1: boolean;
   retrievalStatus: string;
   trustTier: SourceTrustTier;
   trustTierReason: string;
@@ -69,7 +85,7 @@ export function SourceUrlImport() {
   const [trustTier, setTrustTier] = useState<SourceTrustTier>("tier_3");
   const [companyId, setCompanyId] = useState("");
   const [sourceDate, setSourceDate] = useState("");
-  const [pastedPdfText, setPastedPdfText] = useState("");
+  const [editedText, setEditedText] = useState("");
 
   useEffect(() => {
     const supabase = createClient();
@@ -99,7 +115,7 @@ export function SourceUrlImport() {
       setTitle(p.title);
       setDocumentType(p.suggestedDocumentType);
       setTrustTier(p.trustTier);
-      setPastedPdfText("");
+      setEditedText(p.extractedText ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fetch failed.");
     } finally {
@@ -112,8 +128,23 @@ export function SourceUrlImport() {
     setSaving(true);
     setError(null);
     try {
-      const extractedText =
-        preview.contentType === "pdf" ? pastedPdfText.trim() : preview.extractedText;
+      const text = editedText.trim();
+      // Final retrieval status reflects what actually happened:
+      // extracted automatically, pasted manually against an official URL,
+      // or saved as a link-only record.
+      let retrievalStatus = preview.retrievalStatus;
+      if (preview.manualFallbackNeeded) {
+        retrievalStatus = text
+          ? preview.isOfficialTier1
+            ? "manual_with_official_url"
+            : "manual"
+          : preview.retrievalStatus === "extraction_failed"
+            ? "extraction_failed"
+            : "link_only";
+      } else if (!text) {
+        retrievalStatus = "link_only";
+      }
+
       const res = await fetch("/api/sources/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -122,14 +153,11 @@ export function SourceUrlImport() {
           documentType,
           companyId: companyId || null,
           sourceDate: sourceDate || null,
-          extractedText,
+          extractedText: text,
           url: preview.url,
           domain: preview.domain,
           trustTier,
-          retrievalStatus:
-            preview.contentType === "pdf" && extractedText
-              ? "manual"
-              : preview.retrievalStatus,
+          retrievalStatus,
           author: preview.author,
           publication: preview.publication,
           language: preview.language,
@@ -137,7 +165,11 @@ export function SourceUrlImport() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed.");
-      setSuccess("Source saved to the library.");
+      setSuccess(
+        text
+          ? "Source saved with text."
+          : "Source saved as link-only — paste the key text later so AI can analyse it."
+      );
       setPreview(null);
       setUrl("");
       router.refresh();
@@ -148,6 +180,35 @@ export function SourceUrlImport() {
     }
   }
 
+  function extractionBadge(p: UrlPreview) {
+    if (p.manualFallbackNeeded) {
+      return (
+        <Badge variant="danger" className="gap-1">
+          <TriangleAlert className="h-3 w-3" /> Manual fallback needed
+        </Badge>
+      );
+    }
+    if (p.textQuality === "low") {
+      return (
+        <Badge variant="warning" className="gap-1">
+          <FileWarning className="h-3 w-3" /> Low text quality
+        </Badge>
+      );
+    }
+    if (p.textLength > 0) {
+      return (
+        <Badge variant="success" className="gap-1">
+          <CheckCircle2 className="h-3 w-3" /> Text extracted
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="warning" className="gap-1">
+        <Link2 className="h-3 w-3" /> Link only
+      </Badge>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -156,8 +217,9 @@ export function SourceUrlImport() {
         </CardTitle>
         <CardDescription>
           Paste a link from Bursa Malaysia, a company website, a press release page, a
-          report PDF, an investor deck, or a media article. The page is fetched
-          server-side and you confirm a preview before anything is saved.
+          report PDF, an investor deck, or a media article. PDFs and pages are fetched
+          server-side and text is extracted where possible — you review and confirm
+          before anything is saved.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -172,7 +234,7 @@ export function SourceUrlImport() {
           />
           <Button type="submit" disabled={fetching || !url.trim()}>
             {fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-            Fetch preview
+            {fetching ? "Fetching…" : "Fetch preview"}
           </Button>
         </form>
 
@@ -186,15 +248,28 @@ export function SourceUrlImport() {
         {preview && (
           <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
             <div className="flex flex-wrap items-center gap-2">
+              {extractionBadge(preview)}
               <Badge variant={TIER_BADGE_VARIANTS[trustTier]}>
                 {TRUST_TIER_LABELS[trustTier]}
               </Badge>
+              {preview.isOfficialTier1 && (
+                <Badge variant="success" className="gap-1">
+                  <Landmark className="h-3 w-3" /> Official disclosure source
+                </Badge>
+              )}
               <Badge variant="outline">{preview.domain}</Badge>
-              {preview.contentType === "pdf" && <Badge variant="warning">PDF — link only</Badge>}
+              {preview.contentType === "pdf" && (
+                <Badge variant="info">
+                  PDF{preview.pages > 0 ? ` · ${preview.pages} pages` : ""}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">{preview.trustTierReason}</p>
             {preview.note && (
-              <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800">{preview.note}</p>
+              <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2.5 text-xs text-amber-800">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {preview.note}
+              </p>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -246,25 +321,44 @@ export function SourceUrlImport() {
               </div>
             </div>
 
-            {preview.contentType === "pdf" ? (
-              <div className="space-y-1.5">
-                <Label>Paste key sections from the PDF (recommended)</Label>
+            {preview.manualFallbackNeeded ? (
+              <div className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50/60 p-3">
+                <Label className="flex items-center gap-1.5 text-amber-900">
+                  <TriangleAlert className="h-3.5 w-3.5" />
+                  {preview.isOfficialTier1
+                    ? "Bursa manual fallback — paste the announcement text"
+                    : "Manual fallback — paste the page text"}
+                </Label>
+                <p className="text-xs text-amber-800">
+                  The official URL, title, domain, and trust tier will be saved either
+                  way. Pasting the text here makes the source usable by AI analysis.
+                </p>
                 <Textarea
-                  rows={6}
-                  value={pastedPdfText}
-                  onChange={(e) => setPastedPdfText(e.target.value)}
-                  placeholder="Phase 1 cannot extract PDF text automatically. Paste the relevant sections here so the AI can analyse and cite them…"
+                  rows={8}
+                  value={editedText}
+                  onChange={(e) => setEditedText(e.target.value)}
+                  placeholder="Open the page in your browser, copy the announcement / document text, and paste it here…"
+                  className="bg-background"
                 />
               </div>
             ) : (
               <div className="space-y-1.5">
                 <Label>
-                  Extracted text preview ({preview.textLength.toLocaleString()} characters captured)
+                  Extracted text ({editedText.length.toLocaleString()} characters) — review
+                  and edit before saving
                 </Label>
-                <div className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border bg-background p-3 text-xs text-muted-foreground">
-                  {preview.textPreview}
-                  {preview.textLength > preview.textPreview.length && "…"}
-                </div>
+                <Textarea
+                  rows={10}
+                  value={editedText}
+                  onChange={(e) => setEditedText(e.target.value)}
+                  className="bg-background font-mono text-xs"
+                />
+                {preview.textQuality === "low" && (
+                  <p className="text-xs text-amber-700">
+                    Low text quality — the extraction looks incomplete. Add the missing
+                    sections above before saving if possible.
+                  </p>
+                )}
               </div>
             )}
 

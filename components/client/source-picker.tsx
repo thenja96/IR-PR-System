@@ -14,9 +14,26 @@ import { Badge } from "@/components/ui/badge";
 import { cn, formatDate } from "@/lib/utils";
 import {
   TRUST_TIER_SHORT_LABELS,
+  USEFULNESS_LABELS,
   tierForDocumentType,
+  usefulnessForDocumentType,
   type SourceTrustTier,
+  type SourceUsefulness,
 } from "@/lib/sources/trust-tier";
+
+// Below this many characters, extracted text is likely incomplete (e.g. a
+// scanned PDF) — selectable, but the user is warned.
+const LOW_TEXT_THRESHOLD = 800;
+
+const USEFULNESS_BADGE_VARIANTS: Record<
+  SourceUsefulness,
+  "success" | "info" | "warning" | "secondary"
+> = {
+  high_usefulness: "success",
+  medium_usefulness: "info",
+  context_only: "warning",
+  low_usefulness: "secondary",
+};
 
 const TIER_BADGE_VARIANTS: Record<SourceTrustTier, "success" | "info" | "warning" | "secondary"> = {
   tier_1: "success",
@@ -27,7 +44,8 @@ const TIER_BADGE_VARIANTS: Record<SourceTrustTier, "success" | "info" | "warning
 
 const BASE_COLUMNS =
   "id, document_title, document_type, source_date, extracted_text";
-const INTEL_COLUMNS = ", source_trust_tier, retrieval_status, source_domain";
+const INTEL_COLUMNS =
+  ", source_trust_tier, retrieval_status, source_domain, source_usefulness";
 
 interface PickerSource {
   id: string;
@@ -38,6 +56,7 @@ interface PickerSource {
   source_trust_tier?: string | null;
   retrieval_status?: string | null;
   source_domain?: string | null;
+  source_usefulness?: string | null;
 }
 
 export function SourcePicker({
@@ -122,7 +141,11 @@ export function SourcePicker({
             {sources.map((src) => {
               const tier = (src.source_trust_tier ??
                 tierForDocumentType(src.document_type)) as SourceTrustTier;
-              const hasText = Boolean(src.extracted_text?.trim());
+              const usefulness = (src.source_usefulness ??
+                usefulnessForDocumentType(src.document_type)) as SourceUsefulness;
+              const textLength = src.extracted_text?.trim().length ?? 0;
+              const hasText = textLength > 0;
+              const lowQuality = hasText && textLength < LOW_TEXT_THRESHOLD;
               const selected = selectedIds.includes(src.id);
               const expanded = expandedId === src.id;
               return (
@@ -150,12 +173,23 @@ export function SourcePicker({
                         <Badge variant={TIER_BADGE_VARIANTS[tier] ?? "secondary"}>
                           {TRUST_TIER_SHORT_LABELS[tier] ?? tier}
                         </Badge>
+                        <Badge variant={USEFULNESS_BADGE_VARIANTS[usefulness] ?? "secondary"}>
+                          {USEFULNESS_LABELS[usefulness] ?? usefulness}
+                        </Badge>
                         <Badge variant="info">{src.document_type.replace(/_/g, " ")}</Badge>
                         {!hasText && <Badge variant="warning">no text — cannot select</Badge>}
+                        {lowQuality && <Badge variant="warning">low text quality</Badge>}
                         {src.source_domain && <span>{src.source_domain}</span>}
-                        <span>{src.retrieval_status ?? "manual"}</span>
+                        <span>{(src.retrieval_status ?? "manual").replace(/_/g, " ")}</span>
                         {src.source_date && <span>{formatDate(src.source_date)}</span>}
                       </div>
+                      {lowQuality && selected && (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          Only {textLength.toLocaleString()} characters of text — the
+                          extraction may be incomplete. The AI will treat it as partial
+                          material.
+                        </p>
+                      )}
                       {expanded && hasText && (
                         <div className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
                           {src.extracted_text!.slice(0, 600)}

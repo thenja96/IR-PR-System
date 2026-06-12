@@ -25,8 +25,47 @@ export const TRUST_TIER_SHORT_LABELS: Record<SourceTrustTier, string> = {
   tier_4: "Tier 4 · Internal Notes",
 };
 
+// ── Usefulness classification (Phase 3B) ─────────────────────
+// How much weight a source carries in IR/PR analysis, independent of trust
+// tier: an annual report is primary material; a media article is context.
+
+export type SourceUsefulness =
+  | "high_usefulness"
+  | "medium_usefulness"
+  | "context_only"
+  | "low_usefulness";
+
+export const USEFULNESS_LABELS: Record<SourceUsefulness, string> = {
+  high_usefulness: "High usefulness",
+  medium_usefulness: "Medium usefulness",
+  context_only: "Context only",
+  low_usefulness: "Low usefulness",
+};
+
+const DOCUMENT_TYPE_USEFULNESS: Record<string, SourceUsefulness> = {
+  annual_report: "high_usefulness",
+  quarterly_report: "high_usefulness",
+  bursa_announcement: "high_usefulness",
+  investor_deck: "medium_usefulness",
+  press_release: "medium_usefulness",
+  media_article: "context_only",
+  price_volume_csv: "context_only",
+  macro_note: "low_usefulness",
+  trading_note: "low_usefulness",
+  other: "low_usefulness",
+};
+
+export function usefulnessForDocumentType(documentType: string): SourceUsefulness {
+  return DOCUMENT_TYPE_USEFULNESS[documentType] ?? "low_usefulness";
+}
+
 // Regulator / exchange domains — always Tier 1.
 const TIER_1_DOMAINS = ["bursamalaysia.com", "sc.com.my", "bnm.gov.my"];
+
+export function isOfficialTier1Domain(domain: string): boolean {
+  const d = domain.toLowerCase();
+  return TIER_1_DOMAINS.some((t) => d === t || d.endsWith(`.${t}`));
+}
 
 // Malaysian business media — Tier 3.
 const TIER_3_DOMAINS = [

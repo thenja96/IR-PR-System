@@ -12,7 +12,11 @@ const BASE_COLUMNS =
 const INTEL_COLUMNS =
   ", source_url, source_domain, source_trust_tier, retrieval_status";
 
-export default async function SourceLibraryPage() {
+export default async function SourceLibraryPage({
+  searchParams,
+}: {
+  searchParams?: { tab?: string; companyId?: string; companyName?: string; stockCode?: string };
+}) {
   let sources: SourceListRow[] = [];
   if (isSupabaseConfigured()) {
     try {
@@ -43,9 +47,17 @@ export default async function SourceLibraryPage() {
     <div>
       <PageHeader
         title="Source Intelligence Centre"
-        description="Official disclosures, company communications, media coverage, and internal notes — pasted manually or imported from a URL. AI analysis cites these sources by title and trust tier."
+        description="Official disclosures, company communications, media coverage, and internal notes — found online, imported from a URL, or pasted manually. AI analysis cites these sources by title and trust tier."
       />
-      <SourceIntelligenceTabs sources={sources} />
+      <SourceIntelligenceTabs
+        sources={sources}
+        initialTab={searchParams?.tab}
+        discoveryPrefill={{
+          companyId: searchParams?.companyId,
+          companyName: searchParams?.companyName,
+          stockCode: searchParams?.stockCode,
+        }}
+      />
     </div>
   );
 }
