@@ -492,27 +492,136 @@ Source material and notes:
 {{source_text}}
 """
 
-Write in Malaysian listed-company style with The Edge / StarBiz discipline: facts first, strategy second, promotion last. Plain professional sentences, no generic hype, no banned phrases. Every figure must come from the source material or be marked "requires verification". Quotes must only contain claims supported by the sources — flag anything else "requires management confirmation".
+The draft should sound like a Malaysian listed-company press release prepared for business media and investor audiences. Use The Edge / StarBiz clarity: facts first, strategy second, promotion last. Match the depth of a full media-distributed release (press release body of roughly 600-900 words, with substantive paragraphs) — not a short generic draft.
+
+The goal is NOT to sound positive. The goal is to sound accurate, strategic, commercially relevant, measured, Bursa-sensitive, and ready for management review — the register of a business journalist who understands the company, not a marketer. A reader at The Edge should find facts they can verify, not adjectives.
+
+LANGUAGE RULES — banned wording
+Never use, anywhere in the output: "underscoring", "underscored", "paving the way", "testament to", "further solidifies", "well-positioned", "positioned well", "positions us well", "poised", "unlocking", "robust", "robust growth trajectory", "impressive", "capitalize on", "capitalise on", "future opportunities", "growth and expansion", "navigate the complexities", "evolving demands", "leading player", "market positioning", "significant activity", "state-of-the-art".
+Conditionally banned — only allowed when the source explicitly supports them:
+- "significant" / "notable" — only directly beside a sourced number that justifies it.
+- "leading" — only if the source explicitly states the market position.
+- "state-of-the-art" — only if the source uses it about a named asset.
+- "commitment to sustainability" / "commitment to innovation" — only if the source documents a named, concrete initiative.
+- "deliver value to stakeholders" — never as a generic filler; only with a concrete, sourced mechanism.
+When tempted to use an adjective, replace it with the underlying fact. Write "revenue rose 32% year-on-year to RM2.98 billion" — never "delivered robust performance".
+
+FACT DISCIPLINE
+- Every figure must come from the source material; unsupported figures are marked "requires verification".
+- Do not invent segment contributions, initiatives, facilities, or outlook statements. If the sources do not provide segment-level facts, write exactly: "Segment-level contribution requires verification."
+- The performance paragraphs must explain, from the sources: what the performance means commercially, which DISCLOSED segments or activities supported it, and what investors and media should take from it — clearly separating hard disclosed fact, management framing, and forward-looking statements (the last marked "requires management confirmation").
+- Style example. Not this: "showcasing a robust performance driven by its integrated value chain". This: "The performance reflected higher revenue across the Group's operating base, with management continuing to position the integrated business model as a key part of the long-term strategy. Segment-level contribution requires verification."
+
+QUOTE RULES (generated quotes are never confirmed speech)
+- Never use "said", "commented", or any attribution implying the quote was spoken, and never attach a person's name to a generated quote unless the user explicitly provided the spokesperson.
+- Exact format:
+Suggested quote, subject to management approval:
+"[Quote text]"
+- If a spokesperson is needed but none was provided, add on the next line: Suggested spokesperson: [requires management confirmation]
+- The quote adds perspective (what this means for strategy or stakeholders); it must not repeat figures from the body, and it must obey every banned-wording rule.
+- Every generated quote must also be listed under Items Requiring Management Confirmation.
+
+SELF-CHECK — run this before writing the final output, and fix any failure first:
+1. Did I use any banned or conditionally banned phrase without source support?
+2. Did I make any claim not supported by the selected sources without marking it?
+3. Did I treat a generated quote as confirmed speech, or name an unprovided spokesperson?
+4. Did I write "Missing Information" inside the press release body (it belongs only in the Missing Information section; the dateline uses [Date])?
+5. Did I make forward-looking statements sound confirmed?
+6. Did I clearly separate disclosed facts from management framing?
+Only output the final answer after passing all six checks. Do not show the self-check in the output.
 
 Produce exactly these sections:
+
 ## Key Strategic Angle
 ## Communication Objective
 ## Headline Options (5)
 ## Press Release Draft
-Full draft, ready for management review: headline, dateline (city, "Missing Information" if date unknown), lead paragraph with the hard facts, supporting paragraphs, boilerplate "About {{company_name}}" paragraph, and media contact placeholder.
-## CEO Quote
-## CFO Quote
-Only if financially relevant — otherwise state "Not required for this announcement."
-## Key Message Points
-## Investor Takeaways
-## Media Angle
-How business media would frame this story.
+Follow this exact structure:
+1. **PRESS RELEASE / FOR IMMEDIATE RELEASE** header and the press release title.
+2. Three key bullet highlights — the hardest, most newsworthy facts (figures, order book, expansion), each bullet one to two lines.
+3. Dateline: "KUALA LUMPUR, [Date] –" (use the literal placeholder [Date] if no date is in the sources — never write "Missing Information" inside the press release body).
+4. Opening paragraph: the main announcement, the strategic angle, and why it matters to investors and media.
+5. Financial or operational performance paragraph: figures only from the selected sources; explain what the numbers mean commercially, not just what they are; mark anything unsourced "requires verification".
+6. Business segment / operational drivers paragraph: which disclosed segments or activities supported the performance and why that matters to investors. If the sources give no segment detail, state "Segment-level contribution requires verification." rather than inventing drivers.
+7. Strategic progress / outlook paragraph: only disclosed initiatives, presented as management framing where they are framing; undisclosed forward plans are marked "requires management confirmation".
+8. Suggested management quote, following the QUOTE RULES exactly (no "said", no unprovided names, spokesperson line if needed).
+9. Closing paragraph: balanced and forward-looking without overpromising.
+10. -END-
+11. "About {{company_name}}" — only supported company facts; otherwise mark "requires verification".
+12. Media contact placeholder (name, title, email, phone as placeholders).
 ## Items Requiring Management Confirmation
+Include every generated quote and every undisclosed forward-looking statement.
+## Missing Information
+Information a complete release would normally include but the sources do not provide (e.g. announcement date, official company boilerplate).
 ## Bursa Sensitivity Check
-## Sources Used`,
+Address each point concretely, naming the specific claims:
+- **Publicly disclosed claims** — which statements are already public, citing the source for each.
+- **Generated management framing** — wording this draft created that management has not actually said.
+- **Forward-looking statements** — every forward-looking sentence in the draft.
+- **Claims requiring management confirmation** — if the draft includes a generated quote, sustainability or innovation claims, new facilities or headquarters, future outlook, segment drivers, or leadership claims, each must be listed here with: "Requires management confirmation unless supported by the selected source."
+- **Claims to soften or remove before release** — anything that could read as price-sensitive, promissory, or ahead of formal disclosure.
+- **Final release suitability** — a one-line verdict on whether the draft is suitable for release only after management review.
+## Sources Used
+For each source, list:
+- Source title
+- Source type
+- Source date (or "not stated")
+- URL (if available)
+- Trust tier
+- Usefulness
+- Specific facts used from this source
+- Specific parts of the draft this source supports (e.g. "bullet 1, performance paragraph")
+- Claims in the draft NOT supported by this source`,
     expectedOutputSchema:
-      "Markdown: strategic angle, objective, 5 headlines, full press release draft, quotes, key messages, investor takeaways, media angle, confirmation items, sensitivity check, sources",
+      "Markdown: strategic angle, objective, 5 headlines, structured press release draft (header, 3 bullets, dateline, body paragraphs, suggested quote, -END-, about, media contact), confirmation items, missing information, detailed sensitivity check, detailed sources",
     modelPurpose: "final_writing",
+  },
+
+  press_release_fix: {
+    analysisType: "press_release_fix",
+    promptName: "Press Release Compliance Fix",
+    promptCategory: "client_deliverable",
+    workspaceType: "client_ir_pr",
+    systemPrompt: CLIENT_SYSTEM_PROMPT,
+    userPromptTemplate: `You are revising a Bursa Malaysia-listed company press release draft for IR/PR compliance. Do not create a new draft from scratch. Only clean the existing draft. Replace banned phrases with factual wording. If a claim is not clearly supported in Sources Used, mark it as "requires verification" or remove it from the press release body and list it under Items Requiring Management Confirmation.
+
+Compliance scan findings to fix:
+"""
+{{violations}}
+"""
+
+Selected source documents (ground truth for what is supported — if "Missing Information", rely on the draft's own Sources Used section):
+"""
+{{source_context}}
+"""
+
+Original draft — revise this, do not rewrite from scratch:
+"""
+{{original_output}}
+"""
+
+REWRITE RULES
+- Clean the ENTIRE Markdown output, every section: Key Strategic Angle, Communication Objective, Headline Options, Press Release Draft (header, bullets, dateline, all body paragraphs, quote, About, media contact), Items Requiring Management Confirmation, Missing Information, Bursa Sensitivity Check, and Sources Used. Banned phrases hide in headlines, bullets, quotes, and the About section too.
+- Headline options or bullets containing a figure not mapped in Sources Used must be revised, marked "requires verification", or replaced.
+- Keep the same structure and all section headings, in the same order.
+- Keep every supported fact. Do not invent new facts. Do not add new numbers. Do not remove source citations or the source mapping.
+- Remove every hard-banned phrase flagged above (and any others you notice: underscores/underscoring, paving the way, testament to, further solidifies, well-positioned, positioned well, positions us well, poised, unlocking, robust, growth trajectory, impressive, capitalize/capitalise on, future opportunities, growth and expansion, navigating the complexities, evolving demands/needs, leading player, market positioning, significant activity, state-of-the-art, deliver value to stakeholders, strong regional presence). Replace each with the underlying fact, not a synonym of the hype.
+- Soften conditional phrases flagged without a supporting figure (significant, notable, strong, leading, resilience, sustainability, innovation, commitment, operational excellence, strategic growth): either anchor them to a sourced number or replace them with neutral factual wording.
+- Unmapped financial/operational claims (RM amounts, percentages, order book, unbilled sales, capacity, project counts, market share, segment contribution): if the claim is traceable in the source documents or Sources Used, keep it and ensure Sources Used maps it; otherwise mark it "requires verification" or remove it from the press release body and list it under Items Requiring Management Confirmation. Never fabricate a Sources Used entry.
+- Quote rules: generated quotes use exactly "Suggested quote, subject to management approval:" with no "said"/"commented" and no spokesperson name unless one appears in the original user inputs; if a name must be removed, add "Suggested spokesperson: [requires management confirmation]".
+- Preserve and update these sections so they reflect the cleaned draft: Items Requiring Management Confirmation, Missing Information, Bursa Sensitivity Check, Sources Used.
+
+Replacement style examples:
+- "underscores the Group's ability" → "reflects the Group's reported performance"
+- "well-positioned to continue its growth trajectory" → "will continue to focus on disclosed operating priorities, subject to management confirmation"
+- "commitment to sustainability and innovation" → name the disclosed initiative, or state that sustainability and innovation references require management confirmation
+- "leading Malaysian conglomerate" → "Malaysian Bursa-listed group"
+
+Output ONLY the full revised Markdown document, with all sections.`,
+    expectedOutputSchema:
+      "Full revised press release Markdown with identical section structure, banned phrases removed, unsupported claims marked or moved",
+    modelPurpose: "final_writing",
+    temperature: 0.2,
   },
 
   media_interview_qna: {

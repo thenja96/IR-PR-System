@@ -19,6 +19,7 @@ export type AnalysisType =
   | "report_builder_client"
   // Phase 4A — PR/IR deliverable builders
   | "press_release_builder"
+  | "press_release_fix"
   | "media_interview_qna"
   | "activity_proposal_builder"
   // Private market workspace
@@ -76,6 +77,10 @@ export interface ComplianceViolation {
   phrase: string;
   count: number;
   suggestion: string;
+  /** "hard" = banned phrase / broken quote rule; "warning" = needs review. Unset = legacy trading-language rule. */
+  severity?: "hard" | "warning";
+  /** Markdown section heading where the first occurrence was found */
+  section?: string;
 }
 
 export interface ComplianceResult {

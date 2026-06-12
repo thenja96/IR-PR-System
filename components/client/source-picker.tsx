@@ -5,12 +5,17 @@
 // /api/ai/analyze, where the server builds the "Selected Source Documents"
 // context. Link-only sources (no extracted text) cannot be selected.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BookMarked, ChevronDown, Loader2 } from "lucide-react";
+import { BookMarked, ChevronDown, FilePlus2, Loader2, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  SourceAddTextDialog,
+  type AddTextSource,
+} from "@/components/client/source-add-text-dialog";
 import { cn, formatDate } from "@/lib/utils";
 import {
   TRUST_TIER_SHORT_LABELS,
@@ -45,7 +50,7 @@ const TIER_BADGE_VARIANTS: Record<SourceTrustTier, "success" | "info" | "warning
 const BASE_COLUMNS =
   "id, document_title, document_type, source_date, extracted_text";
 const INTEL_COLUMNS =
-  ", source_trust_tier, retrieval_status, source_domain, source_usefulness";
+  ", source_trust_tier, retrieval_status, source_domain, source_url, source_usefulness";
 
 interface PickerSource {
   id: string;
@@ -56,6 +61,7 @@ interface PickerSource {
   source_trust_tier?: string | null;
   retrieval_status?: string | null;
   source_domain?: string | null;
+  source_url?: string | null;
   source_usefulness?: string | null;
 }
 
@@ -71,6 +77,9 @@ export function SourcePicker({
   const [sources, setSources] = useState<PickerSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingSource, setEditingSource] = useState<PickerSource | null>(null);
+  // Bumped after the Add-text dialog closes so the list re-fetches.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,9 +108,30 @@ export function SourcePicker({
     return () => {
       cancelled = true;
     };
-  }, [companyId]);
+  }, [companyId, reloadKey]);
+
+  // Only sources with extracted text are selectable / submittable.
+  const selectableIds = useMemo(
+    () => new Set(sources.filter((s) => Boolean(s.extracted_text?.trim())).map((s) => s.id)),
+    [sources]
+  );
+  const validSelectedCount = selectedIds.filter((id) => selectableIds.has(id)).length;
+  const allDisabled = sources.length > 0 && selectableIds.size === 0;
+
+  // Reconcile the parent's selection against the loaded list: ids pointing at
+  // textless (or removed) sources are pruned so they are never counted or
+  // submitted to /api/ai/analyze.
+  useEffect(() => {
+    if (loading) return;
+    const valid = selectedIds.filter((id) => selectableIds.has(id));
+    if (valid.length !== selectedIds.length) {
+      onChange(valid);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, selectableIds, selectedIds]);
 
   function toggle(id: string) {
+    if (!selectableIds.has(id)) return;
     onChange(
       selectedIds.includes(id)
         ? selectedIds.filter((s) => s !== id)
@@ -114,8 +144,8 @@ export function SourcePicker({
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <BookMarked className="h-4 w-4 text-teal-600" /> Saved sources
-          {selectedIds.length > 0 && (
-            <Badge variant="success">{selectedIds.length} selected</Badge>
+          {validSelectedCount > 0 && (
+            <Badge variant="success">{validSelectedCount} selected</Badge>
           )}
         </CardTitle>
         <CardDescription>
@@ -137,6 +167,14 @@ export function SourcePicker({
             (link the source to this company when saving).
           </p>
         ) : (
+          <>
+          {allDisabled && (
+            <p className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs font-medium text-amber-900">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Sources were saved, but no readable text is available yet. Add text to at
+              least one source before running AI analysis.
+            </p>
+          )}
           <ul className="divide-y rounded-md border bg-background">
             {sources.map((src) => {
               const tier = (src.source_trust_tier ??
@@ -177,11 +215,29 @@ export function SourcePicker({
                           {USEFULNESS_LABELS[usefulness] ?? usefulness}
                         </Badge>
                         <Badge variant="info">{src.document_type.replace(/_/g, " ")}</Badge>
-                        {!hasText && <Badge variant="warning">no text — cannot select</Badge>}
+                        {!hasText && (
+                          <Badge variant="warning">
+                            {src.retrieval_status === "manual_with_official_url"
+                              ? "Official URL saved, but text is missing"
+                              : "No text available — add text before AI analysis"}
+                          </Badge>
+                        )}
                         {lowQuality && <Badge variant="warning">low text quality</Badge>}
                         {src.source_domain && <span>{src.source_domain}</span>}
                         <span>{(src.retrieval_status ?? "manual").replace(/_/g, " ")}</span>
                         {src.source_date && <span>{formatDate(src.source_date)}</span>}
+                        {(!hasText || lowQuality) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => setEditingSource(src)}
+                          >
+                            <FilePlus2 className="h-3 w-3" />
+                            {hasText ? "Update text" : "Add text"}
+                          </Button>
+                        )}
                       </div>
                       {lowQuality && selected && (
                         <p className="mt-1 text-[11px] text-amber-700">
@@ -214,6 +270,17 @@ export function SourcePicker({
               );
             })}
           </ul>
+          </>
+        )}
+        {editingSource && (
+          <SourceAddTextDialog
+            source={editingSource as AddTextSource}
+            onClose={() => {
+              setEditingSource(null);
+              // Re-fetch so a newly added text makes the row selectable.
+              setReloadKey((k) => k + 1);
+            }}
+          />
         )}
       </CardContent>
     </Card>

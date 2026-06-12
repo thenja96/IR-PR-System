@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Cpu,
   ChevronDown,
+  Wand2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,10 @@ export function AnalysisRunner({
   const [result, setResult] = useState<AnalyzeResponseBody | null>(null);
   const [showSanitized, setShowSanitized] = useState(false);
   const [showViolations, setShowViolations] = useState(false);
+  // "Fix Draft" (press_release_builder only): compliance-driven clean rewrite.
+  const [fixing, setFixing] = useState(false);
+  const [fixError, setFixError] = useState<string | null>(null);
+  const [fixResult, setFixResult] = useState<AnalyzeResponseBody | null>(null);
 
   // Saved-source support (client IR/PR modules with a sourceContextField only).
   // On company detail pages companyId comes in as a prop; on standalone pages
@@ -105,6 +110,8 @@ export function AnalysisRunner({
     setResult(null);
     setShowSanitized(false);
     setShowViolations(false);
+    setFixResult(null);
+    setFixError(null);
     try {
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
@@ -135,6 +142,52 @@ export function AnalysisRunner({
       : result?.markdown ?? "";
 
   const violationCount = result?.compliance?.violations.length ?? 0;
+  const hasHardViolations =
+    result?.compliance?.violations.some((v) => v.severity === "hard") ?? false;
+  // PR-specific findings (severity is only set by the PR checker).
+  const prViolationCount =
+    result?.compliance?.violations.filter((v) => v.severity).length ?? 0;
+  const canFixDraft =
+    module.analysisType === "press_release_builder" && prViolationCount > 0;
+  const fixViolationCount = fixResult?.compliance?.violations.length ?? 0;
+  const fixHasHard =
+    fixResult?.compliance?.violations.some((v) => v.severity === "hard") ?? false;
+
+  async function handleFixDraft() {
+    if (!result?.compliance) return;
+    setFixing(true);
+    setFixError(null);
+    setFixResult(null);
+    try {
+      const violationsText = result.compliance.violations
+        .map(
+          (v) =>
+            `- [${v.severity ?? "flag"}] "${v.phrase}" (${v.count}x)${v.section ? ` in section "${v.section}"` : ""} — ${v.suggestion}`
+        )
+        .join("\n");
+      const res = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisType: "press_release_fix",
+          inputs: {
+            original_output: result.markdown,
+            violations: violationsText,
+          },
+          companyId: effectiveCompanyId,
+          selectedSourceIds:
+            selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Fix failed (${res.status})`);
+      setFixResult(data as AnalyzeResponseBody);
+    } catch (err) {
+      setFixError(err instanceof Error ? err.message : "Fix Draft failed.");
+    } finally {
+      setFixing(false);
+    }
+  }
 
   const form = (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -317,10 +370,17 @@ export function AnalysisRunner({
                 <button
                   type="button"
                   onClick={() => setShowViolations(!showViolations)}
-                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 transition-colors hover:bg-amber-200"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors",
+                    hasHardViolations
+                      ? "bg-red-100 text-red-800 hover:bg-red-200"
+                      : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                  )}
                 >
                   <ShieldAlert className="h-3 w-3" />
-                  {violationCount} compliance flag{violationCount > 1 ? "s" : ""}
+                  {hasHardViolations
+                    ? `PR compliance issues found (${violationCount})`
+                    : `${violationCount} compliance flag${violationCount > 1 ? "s" : ""}`}
                   <ChevronDown
                     className={cn(
                       "h-3 w-3 transition-transform",
@@ -333,18 +393,62 @@ export function AnalysisRunner({
                   <ShieldCheck className="h-3 w-3" /> Compliance passed
                 </span>
               ))}
-            <div className="ml-auto">
-              <CopyButton text={displayedMarkdown} label="Copy Markdown" />
+            {canFixDraft && (
+              <button
+                type="button"
+                onClick={handleFixDraft}
+                disabled={fixing}
+                className="inline-flex items-center gap-1 rounded-full bg-teal-600 px-2.5 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-teal-500 disabled:opacity-60"
+              >
+                {fixing ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Wand2 className="h-3 w-3" />
+                )}
+                {fixing ? "Fixing draft…" : "Fix Draft"}
+              </button>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {hasHardViolations && (
+                <span className="text-[11px] font-medium text-red-700">
+                  banned phrases present
+                </span>
+              )}
+              <span
+                onClickCapture={(e) => {
+                  if (
+                    hasHardViolations &&
+                    !window.confirm(
+                      "This output contains hard-banned PR phrases or quote-rule violations. Copy anyway?\n\nReview the compliance flags and fix the wording before sending to a client."
+                    )
+                  ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+              >
+                <CopyButton text={displayedMarkdown} label="Copy Markdown" />
+              </span>
             </div>
           </div>
 
           {/* Compliance details */}
           {result.compliance?.hasViolations && showViolations && (
             <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm sm:px-5">
-              <ul className="list-disc space-y-1 pl-5 text-amber-800">
-                {result.compliance.violations.map((v) => (
-                  <li key={v.phrase}>
-                    “{v.phrase}” ({v.count}×) — suggested: {v.suggestion}
+              <ul className="list-disc space-y-1 pl-5">
+                {result.compliance.violations.map((v, i) => (
+                  <li
+                    key={`${v.phrase}-${i}`}
+                    className={v.severity === "hard" ? "text-red-700" : "text-amber-800"}
+                  >
+                    {v.severity === "hard" && (
+                      <span className="mr-1 rounded bg-red-100 px-1 py-px text-[10px] font-semibold uppercase">
+                        banned
+                      </span>
+                    )}
+                    “{v.phrase}” ({v.count}×)
+                    {v.section && <span className="text-xs"> — in “{v.section}”</span>} —{" "}
+                    {v.suggestion}
                   </li>
                 ))}
               </ul>
@@ -368,6 +472,115 @@ export function AnalysisRunner({
               </p>
             )}
             <Markdown content={displayedMarkdown} />
+          </CardContent>
+        </Card>
+      )}
+
+      {fixError && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="flex items-start gap-2.5 p-4 text-sm text-red-700">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            {fixError}
+          </CardContent>
+        </Card>
+      )}
+
+      {fixing && (
+        <Card>
+          <CardContent className="space-y-3 p-5">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Wand2 className="h-4 w-4 animate-pulse text-teal-600" />
+              Cleaning the draft against compliance findings…
+            </div>
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </CardContent>
+        </Card>
+      )}
+
+      {fixResult && (
+        <Card className="overflow-hidden border-teal-300/80">
+          <div className="flex flex-wrap items-center gap-2 border-b bg-gradient-to-r from-teal-50/90 to-transparent px-4 py-2.5 sm:px-5">
+            <Badge variant="success" className="gap-1">
+              <Wand2 className="h-3 w-3" /> Revised draft
+            </Badge>
+            <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+              compliance flags: {violationCount} → {fixViolationCount}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+              <Cpu className="h-3 w-3" />
+              {fixResult.modelUsed}
+            </span>
+            {fixViolationCount === 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-medium text-teal-800">
+                <ShieldCheck className="h-3 w-3" /> Compliance passed
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  fixHasHard ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+                )}
+              >
+                <ShieldAlert className="h-3 w-3" />
+                {fixHasHard
+                  ? `still has banned phrases (${fixViolationCount})`
+                  : `${fixViolationCount} flag${fixViolationCount > 1 ? "s" : ""} remaining`}
+              </span>
+            )}
+            <div className="ml-auto">
+              <span
+                onClickCapture={(e) => {
+                  if (
+                    fixHasHard &&
+                    !window.confirm(
+                      "The revised draft still contains hard-banned phrases. Copy anyway?"
+                    )
+                  ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+              >
+                <CopyButton text={fixResult.markdown} label="Copy revised" />
+              </span>
+            </div>
+          </div>
+          {fixHasHard && fixResult.compliance && (
+            <div className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-800 sm:px-5">
+              <p className="font-semibold">
+                Fix Draft could not fully resolve all PR compliance issues.
+              </p>
+              <p className="mt-0.5">
+                Remaining banned phrases:{" "}
+                {fixResult.compliance.violations
+                  .filter((v) => v.severity === "hard")
+                  .map((v) => `“${v.phrase}” (${v.count}×)`)
+                  .join(", ")}
+              </p>
+            </div>
+          )}
+          {fixViolationCount > 0 && fixResult.compliance && (
+            <div className="border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs sm:px-5">
+              <ul className="list-disc space-y-0.5 pl-5">
+                {fixResult.compliance.violations.map((v, i) => (
+                  <li
+                    key={`fix-${v.phrase}-${i}`}
+                    className={v.severity === "hard" ? "text-red-700" : "text-amber-800"}
+                  >
+                    “{v.phrase}” ({v.count}×) — {v.suggestion}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <CardContent className="p-4 pt-4 sm:p-6 sm:pt-5">
+            <p className="mb-3 text-xs text-muted-foreground">
+              The original output above is unchanged — compare before using the revised
+              version.
+            </p>
+            <Markdown content={fixResult.markdown} />
           </CardContent>
         </Card>
       )}

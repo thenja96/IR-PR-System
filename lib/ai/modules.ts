@@ -215,6 +215,19 @@ export const MODULES: Record<string, ModuleConfig> = {
     submitLabel: "Draft press release",
   },
 
+  // Internal: powers the "Fix Draft" action on Press Release Builder output.
+  // Not linked in navigation — invoked programmatically with the original
+  // output and detected violations; sourceContextField lets the analyze route
+  // re-inject the originally selected sources as ground truth.
+  press_release_fix: {
+    analysisType: "press_release_fix",
+    sourceContextField: "source_context",
+    title: "Press Release Compliance Fix",
+    description: "Cleans a generated press release draft against PR compliance findings.",
+    workspaceType: "client_ir_pr",
+    fields: [],
+  },
+
   media_interview_qna: {
     analysisType: "media_interview_qna",
     sourceContextField: "source_text",

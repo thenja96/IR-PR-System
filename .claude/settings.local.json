@@ -12,7 +12,8 @@
       "PowerShell(npm run typecheck)",
       "PowerShell(npm run build)",
       "PowerShell(try { Remove-Item -Recurse -Force \".next\" -ErrorAction Stop; \"Deleted .next\" } catch { \"Could not fully delete .next: $\\($_.Exception.Message\\)\" })",
-      "PowerShell(npm install unpdf)"
+      "PowerShell(npm install unpdf)",
+      "PowerShell(node \".\\\\pr-cleanup-test.ts\" 2>$null)"
     ]
   }
 }

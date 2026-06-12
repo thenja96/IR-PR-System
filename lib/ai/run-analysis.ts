@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { chatCompletion, resolveModel } from "@/lib/openrouter/client";
 import { getTemplate } from "@/lib/prompts/templates";
 import { checkCompliance } from "@/lib/compliance/checker";
+import { checkPrCompliance } from "@/lib/compliance/pr-checker";
+import { sanitizePrDraft } from "@/lib/compliance/pr-cleanup";
 import type {
   AnalysisType,
   AnalyzeResponseBody,
@@ -53,11 +55,32 @@ export async function runAnalysis(params: {
     maxTokens: 4000,
   });
 
+  // "Fix Draft" rewrites get a deterministic safety pass AFTER the AI
+  // rewrite: every hard-banned phrase is mechanically replaced and unmapped
+  // RM/% claims are marked "(requires verification)". The compliance re-check
+  // below then runs on the CLEANED text, so the displayed flags are final.
+  let finalContent = result.content;
+  if (analysisType === "press_release_fix") {
+    finalContent = sanitizePrDraft(result.content).text;
+  }
+
   // Compliance gate: every client-workspace output is scanned. Violations are
   // surfaced to the UI; the sanitized version is offered alongside.
   let compliance: ComplianceResult | null = null;
   if (template.workspaceType === "client_ir_pr") {
-    compliance = checkCompliance(result.content);
+    compliance = checkCompliance(finalContent);
+    // PR Compliance Checker v2: mechanical banned-phrase / quote-safety /
+    // source-mapping rules specific to press release output. Flag-only.
+    if (analysisType === "press_release_builder" || analysisType === "press_release_fix") {
+      const prViolations = checkPrCompliance(finalContent);
+      if (prViolations.length > 0) {
+        compliance = {
+          hasViolations: true,
+          violations: [...compliance.violations, ...prViolations],
+          sanitizedText: compliance.sanitizedText,
+        };
+      }
+    }
   }
 
   // Log the run. Failure to log must not lose the analysis result.
@@ -89,7 +112,7 @@ export async function runAnalysis(params: {
         analysis_type: analysisType,
         model_used: result.modelUsed,
         input_summary: inputSummary,
-        output_markdown: result.content,
+        output_markdown: finalContent,
         output_json: compliance
           ? { compliance_violations: compliance.violations }
           : null,
@@ -104,7 +127,7 @@ export async function runAnalysis(params: {
   }
 
   return {
-    markdown: result.content,
+    markdown: finalContent,
     modelUsed: result.modelUsed,
     runId,
     compliance,
