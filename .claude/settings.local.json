@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm install --no-audit --no-fund)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell($sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/login\" -UseBasicParsing -TimeoutSec 25 -MaximumRedirection 0 -ErrorAction Stop; $sw.Stop\\(\\); \"Status: $\\($r.StatusCode\\) in $\\($sw.Elapsed.TotalSeconds\\)s; Length: $\\($r.Content.Length\\)\" } catch { $sw.Stop\\(\\); \"FAILED after $\\($sw.Elapsed.TotalSeconds\\)s : $\\($_.Exception.Message\\)\" })",
+      "PowerShell($sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); try { $r = Invoke-WebRequest -Uri \"http://localhost:3001/login\" -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop; $sw.Stop\\(\\); \"login: HTTP $\\($r.StatusCode\\) in $\\([Math]::Round\\($sw.Elapsed.TotalSeconds,1\\)\\)s; contains 'Aegis MarketPulse': $\\($r.Content -match 'Aegis MarketPulse'\\)\" } catch { $sw.Stop\\(\\); \"FAILED after $\\([Math]::Round\\($sw.Elapsed.TotalSeconds,1\\)\\)s : $\\($_.Exception.Message\\)\" })",
+      "PowerShell(Stop-Process -Id 8804, 3000, 31100 -Force -Confirm:$false; Start-Sleep -Seconds 2; $left = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue; if \\($left\\) { \"Port 3000 still occupied by PID $\\(\\($left | Select-Object -First 1\\).OwningProcess\\)\" } else { \"Port 3000 is free\" })",
+      "PowerShell(npm run dev)",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(45\\); do { Start-Sleep -Seconds 3; $up = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue } until \\($up -or \\(Get-Date\\) -gt $deadline\\); if \\(-not $up\\) { \"Server did not bind port 3000\"; exit 1 }; $sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/login\" -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop; $sw.Stop\\(\\); \"login: HTTP $\\($r.StatusCode\\) in $\\([Math]::Round\\($sw.Elapsed.TotalSeconds,1\\)\\)s; is new app: $\\($r.Content -match 'Market intelligence'\\)\" } catch { $sw.Stop\\(\\); \"FAILED after $\\([Math]::Round\\($sw.Elapsed.TotalSeconds,1\\)\\)s : $\\($_.Exception.Message\\)\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/dashboard\" -UseBasicParsing -TimeoutSec 60 -MaximumRedirection 0 -ErrorAction Stop; \"dashboard \\(logged out\\): HTTP $\\($r.StatusCode\\)\" } catch { $resp = $_.Exception.Response; if \\($resp\\) { \"dashboard \\(logged out\\): HTTP $\\([int]$resp.StatusCode\\) → redirect to $\\($resp.Headers['Location']\\)\" } else { \"FAILED: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(npm run typecheck)",
+      "PowerShell(npm run build)"
+    ]
+  }
+}
