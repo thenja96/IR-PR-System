@@ -60,6 +60,21 @@ export type DocumentType =
   | "trading_note"
   | "other";
 
+// Source Intelligence (migration 0002)
+export type SourceTrustTier = "tier_1" | "tier_2" | "tier_3" | "tier_4";
+export type RetrievalStatus = "manual" | "fetched" | "fetch_failed" | "pdf_link_only";
+
+export interface SourceCitation {
+  title: string;
+  url: string | null;
+  domain: string | null;
+  publication: string | null;
+  author: string | null;
+  source_date: string | null;
+  trust_tier: SourceTrustTier;
+  retrieved_at: string;
+}
+
 export interface SourceDocument {
   id: string;
   workspace_id: string;
@@ -72,6 +87,16 @@ export interface SourceDocument {
   extracted_text: string | null;
   source_date: string | null;
   uploaded_by: string | null;
+  // Source Intelligence fields — null on records created before migration 0002.
+  source_url: string | null;
+  source_domain: string | null;
+  source_trust_tier: SourceTrustTier | null;
+  retrieval_status: RetrievalStatus | null;
+  retrieved_at: string | null;
+  source_author: string | null;
+  source_publication: string | null;
+  source_language: string | null;
+  source_citation: SourceCitation | null;
   created_at: string;
   updated_at: string;
 }

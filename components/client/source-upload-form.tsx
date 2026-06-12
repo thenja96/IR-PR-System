@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { tierForDocumentType } from "@/lib/sources/trust-tier";
 import type { Company } from "@/types/database";
 
 const DOCUMENT_TYPES = [
@@ -96,7 +97,7 @@ export function SourceUploadForm() {
         throw new Error("Attach a file or paste the document text.");
       }
 
-      const { error: insertError } = await supabase.from("source_documents").insert({
+      const basePayload = {
         workspace_id: ws.id,
         company_id: form.company_id || null,
         document_type: form.document_type,
@@ -107,7 +108,19 @@ export function SourceUploadForm() {
         extracted_text: form.extracted_text || null,
         source_date: form.source_date || null,
         uploaded_by: user?.id ?? null,
+      };
+
+      // Stamp Source Intelligence metadata (migration 0002). If the migration
+      // has not been applied yet, retry with the original payload so manual
+      // paste keeps working.
+      let { error: insertError } = await supabase.from("source_documents").insert({
+        ...basePayload,
+        source_trust_tier: tierForDocumentType(form.document_type),
+        retrieval_status: "manual",
       });
+      if (insertError && /source_trust_tier|retrieval_status|schema cache/i.test(insertError.message)) {
+        ({ error: insertError } = await supabase.from("source_documents").insert(basePayload));
+      }
       if (insertError) throw insertError;
 
       setSuccess("Source saved.");

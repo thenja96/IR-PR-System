@@ -101,10 +101,10 @@ export function CompanyTabs({
           <EmptyState
             icon={Library}
             title="No source documents"
-            description="Upload annual reports, quarterly results, decks, or paste announcement text in the Source Library."
+            description="Upload annual reports, quarterly results, decks, paste announcement text, or import from a URL in the Source Intelligence Centre."
             action={
               <Link href="/client/source-library">
-                <Button size="sm">Open Source Library</Button>
+                <Button size="sm">Open Source Intelligence Centre</Button>
               </Link>
             }
           />

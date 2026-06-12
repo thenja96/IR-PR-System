@@ -49,7 +49,7 @@ interface NavItem {
 const clientNav: NavItem[] = [
   { label: "Client Dashboard", href: "/client", icon: LayoutDashboard },
   { label: "Companies", href: "/client/companies", icon: Building2 },
-  { label: "Source Library", href: "/client/source-library", icon: Library },
+  { label: "Source Intelligence", href: "/client/source-library", icon: Library },
   { label: "Announcement Radar", href: "/client/announcement-radar", icon: Radar },
   { label: "Competitor Intelligence", href: "/client/competitor-intelligence", icon: Swords },
   { label: "News Impact Radar", href: "/client/news-impact", icon: Newspaper },
