@@ -17,6 +17,10 @@ export type AnalysisType =
   | "crisis_monitor"
   | "compliance_rewrite"
   | "report_builder_client"
+  // Phase 4A — PR/IR deliverable builders
+  | "press_release_builder"
+  | "media_interview_qna"
+  | "activity_proposal_builder"
   // Private market workspace
   | "gold_market_regime"
   | "gold_technical_structure"

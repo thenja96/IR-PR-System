@@ -178,6 +178,98 @@ export const MODULES: Record<string, ModuleConfig> = {
     submitLabel: "Generate report",
   },
 
+  // ── Phase 4A — PR/IR deliverable builders ───────────────────
+  press_release_builder: {
+    analysisType: "press_release_builder",
+    sourceContextField: "source_text",
+    title: "Press Release Builder",
+    description:
+      "Draft a client-ready press release package — headlines, full draft, quotes, and key messages — from saved sources.",
+    workspaceType: "client_ir_pr",
+    fields: [
+      { name: "company_name", label: "Company name", type: "text", required: true },
+      {
+        name: "announcement_type",
+        label: "Announcement / development type",
+        type: "select",
+        required: true,
+        options: [
+          "Financial results",
+          "Contract win / order book",
+          "MOU / partnership",
+          "Acquisition / disposal",
+          "New product / service launch",
+          "Expansion / new facility",
+          "Leadership appointment",
+          "Dividend announcement",
+          "ESG / sustainability initiative",
+          "Corporate milestone",
+          "Other",
+        ],
+      },
+      { name: "strategic_angle", label: "Preferred strategic angle (optional)", type: "text", placeholder: "e.g. recurring income growth, regional expansion" },
+      { name: "quote_direction", label: "Quote direction (optional)", type: "text", placeholder: "e.g. confident but measured, focus on execution discipline" },
+      { name: "target_media", label: "Target media audience (optional)", type: "text", placeholder: "e.g. The Edge, StarBiz, Chinese business media" },
+      { name: "source_text", label: "Source material / development details", type: "textarea", rows: 10, required: true, placeholder: "Paste the announcement, results extract, or development details — or select saved sources above…" },
+    ],
+    submitLabel: "Draft press release",
+  },
+
+  media_interview_qna: {
+    analysisType: "media_interview_qna",
+    sourceContextField: "source_text",
+    title: "Media Interview Q&A Builder",
+    description:
+      "Prepare a spokesperson for a media interview — likely questions, tough questions, holding lines, and safe wording.",
+    workspaceType: "client_ir_pr",
+    fields: [
+      { name: "company_name", label: "Company name", type: "text", required: true },
+      {
+        name: "spokesperson",
+        label: "Spokesperson",
+        type: "select",
+        required: true,
+        options: ["CEO", "CFO", "Chairman", "Managing Director"],
+      },
+      { name: "interview_context", label: "Interview context", type: "textarea", rows: 4, required: true, placeholder: "Occasion, recent events, expected topics — e.g. post-results media session after Q2 announcement…" },
+      { name: "target_outlet", label: "Target outlet / journalist type (optional)", type: "text", placeholder: "e.g. The Edge senior writer, business desk reporter, TV business segment" },
+      { name: "source_text", label: "Source material", type: "textarea", rows: 8, required: true, placeholder: "Paste the latest results, announcements, or background — or select saved sources above…" },
+    ],
+    submitLabel: "Build interview pack",
+  },
+
+  activity_proposal_builder: {
+    analysisType: "activity_proposal_builder",
+    sourceContextField: "source_text",
+    title: "Activity Proposal Builder",
+    description:
+      "Draft a concrete IR/PR activity proposal — rationale, structure, timeline, deliverables, and value — ready to present to the client.",
+    workspaceType: "client_ir_pr",
+    fields: [
+      { name: "company_name", label: "Client company", type: "text", required: true },
+      {
+        name: "activity_type",
+        label: "Activity type",
+        type: "select",
+        required: true,
+        options: [
+          "Analyst briefing",
+          "Media briefing",
+          "Fund manager meeting",
+          "Signing ceremony",
+          "AGM / EGM",
+          "Investor day",
+          "Stakeholder engagement event",
+          "Digital / social campaign",
+        ],
+      },
+      { name: "objective", label: "Objective", type: "text", required: true, placeholder: "e.g. rebuild analyst coverage after two quiet quarters" },
+      { name: "target_audience", label: "Target audience (optional)", type: "text", placeholder: "e.g. sell-side analysts, fund managers, business media" },
+      { name: "source_text", label: "Company context & recent developments", type: "textarea", rows: 8, required: true, placeholder: "Paste recent results, announcements, or context — or select saved sources above…" },
+    ],
+    submitLabel: "Draft proposal",
+  },
+
   // ── Private market ──────────────────────────────────────────
   gold_market_regime: {
     analysisType: "gold_market_regime",

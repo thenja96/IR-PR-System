@@ -472,6 +472,134 @@ Requirements:
   },
 
   // ──────────────────────────────────────────────────────────────
+  // CLIENT IR/PR — PHASE 4A DELIVERABLE BUILDERS
+  // ──────────────────────────────────────────────────────────────
+  press_release_builder: {
+    analysisType: "press_release_builder",
+    promptName: "Press Release Builder",
+    promptCategory: "client_deliverable",
+    workspaceType: "client_ir_pr",
+    systemPrompt: CLIENT_SYSTEM_PROMPT,
+    userPromptTemplate: `Draft a client-ready press release package for {{company_name}}, a Bursa Malaysia-listed company.
+
+Announcement / development type: {{announcement_type}}
+Preferred strategic angle (if specified): {{strategic_angle}}
+Quote direction (tone and emphasis for management quotes): {{quote_direction}}
+Target media audience: {{target_media}}
+
+Source material and notes:
+"""
+{{source_text}}
+"""
+
+Write in Malaysian listed-company style with The Edge / StarBiz discipline: facts first, strategy second, promotion last. Plain professional sentences, no generic hype, no banned phrases. Every figure must come from the source material or be marked "requires verification". Quotes must only contain claims supported by the sources — flag anything else "requires management confirmation".
+
+Produce exactly these sections:
+## Key Strategic Angle
+## Communication Objective
+## Headline Options (5)
+## Press Release Draft
+Full draft, ready for management review: headline, dateline (city, "Missing Information" if date unknown), lead paragraph with the hard facts, supporting paragraphs, boilerplate "About {{company_name}}" paragraph, and media contact placeholder.
+## CEO Quote
+## CFO Quote
+Only if financially relevant — otherwise state "Not required for this announcement."
+## Key Message Points
+## Investor Takeaways
+## Media Angle
+How business media would frame this story.
+## Items Requiring Management Confirmation
+## Bursa Sensitivity Check
+## Sources Used`,
+    expectedOutputSchema:
+      "Markdown: strategic angle, objective, 5 headlines, full press release draft, quotes, key messages, investor takeaways, media angle, confirmation items, sensitivity check, sources",
+    modelPurpose: "final_writing",
+  },
+
+  media_interview_qna: {
+    analysisType: "media_interview_qna",
+    promptName: "Media Interview Q&A Builder",
+    promptCategory: "client_deliverable",
+    workspaceType: "client_ir_pr",
+    systemPrompt: CLIENT_SYSTEM_PROMPT,
+    userPromptTemplate: `Prepare a media interview Q&A briefing pack for {{company_name}}, a Bursa Malaysia-listed company.
+
+Spokesperson: {{spokesperson}}
+Interview context (occasion, recent events, expected topics): {{interview_context}}
+Target outlet / journalist type: {{target_outlet}}
+
+Source material and notes:
+"""
+{{source_text}}
+"""
+
+Answers must sound like a composed Malaysian listed-company {{spokesperson}}: factual, calm, no overpromising, no forward-looking guarantees, no price-sensitive disclosure beyond what is already public. Every answer must be supportable by the source material — mark unsupported content "requires verification" and anything needing internal sign-off "requires management confirmation".
+
+Produce exactly these sections:
+## Interview Positioning
+The 2-3 core impressions the spokesperson should leave.
+## Likely Media Questions (8-10)
+Each with a spokesperson-safe suggested answer.
+## Tough Questions (4-6)
+Harder, sceptical questions with composed, factual answers.
+## Analyst-Style Follow-Up Questions
+Questions a financially literate journalist may push on, with safe answers.
+## Sensitive Questions
+Questions that touch unannounced, price-sensitive, or speculative ground.
+## Holding Lines
+Short, safe responses for questions the spokesperson should not answer in detail.
+## Safer Wording Suggestions
+Phrases to avoid in this interview and the safer alternative for each.
+## Bursa Sensitivity Check
+## Sources Used`,
+    expectedOutputSchema:
+      "Markdown: positioning, likely/tough/analyst/sensitive questions with answers, holding lines, safer wording, sensitivity check, sources",
+    modelPurpose: "long_analysis",
+  },
+
+  activity_proposal_builder: {
+    analysisType: "activity_proposal_builder",
+    promptName: "Activity Proposal Builder",
+    promptCategory: "client_deliverable",
+    workspaceType: "client_ir_pr",
+    systemPrompt: CLIENT_SYSTEM_PROMPT,
+    userPromptTemplate: `Draft an IR/PR activity proposal that Aegis can present to client {{company_name}}, a Bursa Malaysia-listed company.
+
+Activity type: {{activity_type}}
+Objective: {{objective}}
+Target audience: {{target_audience}}
+
+Company context, recent developments, and notes:
+"""
+{{source_text}}
+"""
+
+The proposal must be concrete and client-ready: grounded in the company's actual situation from the source material, professional and non-pushy, with realistic deliverables. Mark assumptions "requires verification" and anything needing the client's internal decision "requires management confirmation".
+
+Produce exactly these sections:
+## Proposal Title
+## Rationale
+Why this activity, why now — anchored to the source material.
+## Communication Objective
+## Target Audience
+## Proposed Activity Structure
+Format, agenda outline, speakers/roles, and venue/platform considerations.
+## Timeline
+Preparation milestones working back from the proposed date ("Missing Information" if no date is given).
+## Deliverables
+What Aegis will produce and run.
+## Expected Value to Client
+Investor, media, and stakeholder outcomes — realistic, no guaranteed results.
+## Suggested Fee Positioning
+Only if the activity maps to a standard service; frame as a range and mark "requires management confirmation". Otherwise state "To be scoped with the client."
+## Next Action
+## Bursa Sensitivity Check
+## Sources Used`,
+    expectedOutputSchema:
+      "Markdown: title, rationale, objective, audience, structure, timeline, deliverables, value, fee positioning, next action, sensitivity check, sources",
+    modelPurpose: "final_writing",
+  },
+
+  // ──────────────────────────────────────────────────────────────
   // PRIVATE MARKET WORKSPACE
   // ──────────────────────────────────────────────────────────────
   gold_market_regime: {
